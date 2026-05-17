@@ -221,19 +221,26 @@ impl LinuxKitBackend {
         match request {
             LinuxKitRequest::Fs(request) => handle_fs(request),
             LinuxKitRequest::ShellRun(request) => {
-                ensure_linuxkit_ash()?;
-                let mut cwd = request
-                    .cwd
-                    .map(|path| normalize_virtual_path(&path))
-                    .unwrap_or_else(default_cwd);
-                let output = run_virtual_command(&request.command, &mut cwd);
-                json_response(CommandOutput {
-                    stdout: output.stdout,
-                    stderr: output.stderr,
-                    exit_code: Some(output.exit_code),
-                    timed_out: false,
-                    truncated: false,
-                })
+                #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+                {
+                    handle_native_shell_run(request)
+                }
+                #[cfg(not(all(mobile, target_os = "ios", terax_ios_linuxkit_native)))]
+                {
+                    ensure_linuxkit_ash()?;
+                    let mut cwd = request
+                        .cwd
+                        .map(|path| normalize_virtual_path(&path))
+                        .unwrap_or_else(default_cwd);
+                    let output = run_virtual_command(&request.command, &mut cwd);
+                    json_response(CommandOutput {
+                        stdout: output.stdout,
+                        stderr: output.stderr,
+                        exit_code: Some(output.exit_code),
+                        timed_out: false,
+                        truncated: false,
+                    })
+                }
             }
             LinuxKitRequest::ShellSessionOpen(request) => {
                 ensure_linuxkit_ash()?;
@@ -250,26 +257,33 @@ impl LinuxKitBackend {
                 Ok(LinuxKitResponse::U32 { value: id })
             }
             LinuxKitRequest::ShellSessionRun(request) => {
-                let mut state = state().lock().unwrap();
-                let cwd = state
-                    .shell_sessions
-                    .get_mut(&request.id)
-                    .ok_or_else(|| "no shell session".to_string())?;
-                if let Some(hint) = request.cwd.filter(|s| !s.is_empty()) {
-                    let hinted = normalize_virtual_path(&hint);
-                    if real_path_for_virtual(&hinted).is_ok_and(|path| path.is_dir()) {
-                        *cwd = hinted;
-                    }
+                #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+                {
+                    handle_native_shell_session_run(request)
                 }
-                let output = run_virtual_command(&request.command, cwd);
-                json_response(SessionRunOutput {
-                    stdout: output.stdout,
-                    stderr: output.stderr,
-                    exit_code: Some(output.exit_code),
-                    timed_out: false,
-                    truncated: false,
-                    cwd_after: to_canon(cwd),
-                })
+                #[cfg(not(all(mobile, target_os = "ios", terax_ios_linuxkit_native)))]
+                {
+                    let mut state = state().lock().unwrap();
+                    let cwd = state
+                        .shell_sessions
+                        .get_mut(&request.id)
+                        .ok_or_else(|| "no shell session".to_string())?;
+                    if let Some(hint) = request.cwd.filter(|s| !s.is_empty()) {
+                        let hinted = normalize_virtual_path(&hint);
+                        if real_path_for_virtual(&hinted).is_ok_and(|path| path.is_dir()) {
+                            *cwd = hinted;
+                        }
+                    }
+                    let output = run_virtual_command(&request.command, cwd);
+                    json_response(SessionRunOutput {
+                        stdout: output.stdout,
+                        stderr: output.stderr,
+                        exit_code: Some(output.exit_code),
+                        timed_out: false,
+                        truncated: false,
+                        cwd_after: to_canon(cwd),
+                    })
+                }
             }
             LinuxKitRequest::ShellSessionClose(request) => {
                 state().lock().unwrap().shell_sessions.remove(&request.id);
@@ -363,7 +377,7 @@ impl LinuxKitBackend {
         &self,
         cols: u16,
         rows: u16,
-        cwd: Option<String>,
+        _cwd: Option<String>,
         on_data: Channel<Response>,
         on_exit: Channel<i32>,
     ) -> Result<u32, String> {
@@ -372,41 +386,40 @@ impl LinuxKitBackend {
         let id = state.next_pty_id;
         state.next_pty_id += 1;
         #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
-        match NativePtySession::open(cols, rows, on_data.clone(), on_exit.clone()) {
-            Ok(session) => {
-                state.native_pty_sessions.insert(id, session);
-                return Ok(id);
-            }
-            Err(err) => {
-                log::warn!("native ios-linuxkit PTY failed, using adapter fallback: {err}");
-            }
+        {
+            let session = NativePtySession::open(cols, rows, on_data, on_exit)?;
+            state.native_pty_sessions.insert(id, session);
+            return Ok(id);
         }
-        let cwd = cwd
-            .map(|path| normalize_virtual_path(&path))
-            .unwrap_or_else(default_cwd);
-        let initial_prompt = prompt(&cwd, 0);
-        state.pty_sessions.insert(
-            id,
-            PtySession {
-                cwd,
-                input: String::new(),
-                input_state: InputState::Normal,
-                cols,
-                rows,
-                on_data: on_data.clone(),
-                on_exit,
-            },
-        );
-        drop(state);
+        #[cfg(not(all(mobile, target_os = "ios", terax_ios_linuxkit_native)))]
+        {
+            let cwd = _cwd
+                .map(|path| normalize_virtual_path(&path))
+                .unwrap_or_else(default_cwd);
+            let initial_prompt = prompt(&cwd, 0);
+            state.pty_sessions.insert(
+                id,
+                PtySession {
+                    cwd,
+                    input: String::new(),
+                    input_state: InputState::Normal,
+                    cols,
+                    rows,
+                    on_data: on_data.clone(),
+                    on_exit,
+                },
+            );
+            drop(state);
 
-        send_pty(
-            &on_data,
-            format!(
-                "\x1b[2mStarting iOS LinuxKit {LINUXKIT_SHELL} -l ({cols}x{rows})\x1b[0m\r\n{initial_prompt}",
-            )
-            .as_bytes(),
-        )?;
-        Ok(id)
+            send_pty(
+                &on_data,
+                format!(
+                    "\x1b[2mStarting iOS LinuxKit {LINUXKIT_SHELL} -l ({cols}x{rows})\x1b[0m\r\n{initial_prompt}",
+                )
+                .as_bytes(),
+            )?;
+            Ok(id)
+        }
     }
 
     pub fn pty_write(&self, id: u32, data: String) -> Result<(), String> {
@@ -1514,6 +1527,64 @@ pub(crate) fn linuxkit_root_dir() -> Result<PathBuf, String> {
     ROOT.get_or_init(init_linuxkit_root_dir).clone()
 }
 
+#[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+fn handle_native_shell_run(request: ShellRunRequest) -> Result<LinuxKitResponse, String> {
+    ensure_linuxkit_ash()?;
+    let cwd = request
+        .cwd
+        .map(|path| normalize_virtual_path(&path))
+        .unwrap_or_else(default_cwd);
+    let output =
+        NativePtySession::run_command(&request.command, &to_canon(&cwd), request.timeout_secs)?;
+    json_response(CommandOutput {
+        stdout: output.stdout,
+        stderr: output.stderr,
+        exit_code: Some(output.exit_code),
+        timed_out: output.timed_out,
+        truncated: false,
+    })
+}
+
+#[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+fn handle_native_shell_session_run(
+    request: ShellSessionRunRequest,
+) -> Result<LinuxKitResponse, String> {
+    ensure_linuxkit_ash()?;
+    let mut cwd = {
+        let mut state = state().lock().unwrap();
+        let cwd = state
+            .shell_sessions
+            .get_mut(&request.id)
+            .ok_or_else(|| "no shell session".to_string())?;
+        if let Some(hint) = request.cwd.filter(|s| !s.is_empty()) {
+            let hinted = normalize_virtual_path(&hint);
+            if real_path_for_virtual(&hinted).is_ok_and(|path| path.is_dir()) {
+                *cwd = hinted;
+            }
+        }
+        cwd.clone()
+    };
+
+    let output =
+        NativePtySession::run_command(&request.command, &to_canon(&cwd), request.timeout_secs)?;
+    cwd = normalize_virtual_path(&output.cwd_after);
+    {
+        let mut state = state().lock().unwrap();
+        if let Some(session_cwd) = state.shell_sessions.get_mut(&request.id) {
+            *session_cwd = cwd.clone();
+        }
+    }
+
+    json_response(SessionRunOutput {
+        stdout: output.stdout,
+        stderr: output.stderr,
+        exit_code: Some(output.exit_code),
+        timed_out: output.timed_out,
+        truncated: false,
+        cwd_after: to_canon(cwd),
+    })
+}
+
 fn init_linuxkit_root_dir() -> Result<PathBuf, String> {
     if let Ok(path) = std::env::var("TERAX_IOS_LINUXKIT_ROOT") {
         let path = PathBuf::from(path);
@@ -1701,15 +1772,20 @@ fn to_canon(path: impl AsRef<Path>) -> String {
 
 #[tauri::command]
 pub fn linuxkit_health() -> LinuxKitHealth {
+    #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+    let version = "ios-linuxkit-native";
+    #[cfg(not(all(mobile, target_os = "ios", terax_ios_linuxkit_native)))]
+    let version = "ios-linuxkit-adapter";
+
     match ensure_linuxkit_ash() {
         Ok(_) => LinuxKitHealth {
             available: true,
-            version: Some("ios-linuxkit-adapter".into()),
+            version: Some(version.into()),
             message: Some("embedded ios-linuxkit ash is ready".into()),
         },
         Err(e) => LinuxKitHealth {
             available: false,
-            version: Some("ios-linuxkit-adapter".into()),
+            version: Some(version.into()),
             message: Some(e),
         },
     }

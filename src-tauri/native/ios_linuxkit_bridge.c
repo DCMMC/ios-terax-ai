@@ -139,6 +139,7 @@ void terax_linuxkit_terminal_resize(void *terminal, int32_t cols, int32_t rows) 
 void terax_linuxkit_terminal_close(void *terminal) {
     struct terax_terminal *t = (struct terax_terminal *)terminal;
     if (!t) return;
+    if (t->closed) return;
     t->closed = true;
     struct linux_tty *tty = t->tty;
     if (tty && tty->ops && tty->ops->hangup) {
@@ -217,7 +218,12 @@ nsobj_t Terminal_terminalWithType_number(int type, int number) {
 
 void Terminal_setLinuxTTY(nsobj_t self, struct linux_tty *tty) {
     struct terax_terminal *t = (struct terax_terminal *)self;
-    if (t) t->tty = tty;
+    if (!t) return;
+    t->tty = tty;
+    if (!tty && !t->closed) {
+        t->closed = true;
+        if (t->exit) t->exit(t->user, 0);
+    }
 }
 
 int Terminal_sendOutput_length(nsobj_t self, const char *data, int size) {
