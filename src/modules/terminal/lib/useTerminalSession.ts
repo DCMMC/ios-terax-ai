@@ -1,6 +1,9 @@
 import { ensureMonoFontsLoaded } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import type { TerminalSearchAddon } from "./terminalSurface";
+import {
+  ensureTerminalSurfaceReady,
+  type TerminalSearchAddon,
+} from "./terminalSurface";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { DormantRing } from "./dormantRing";
 import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
@@ -102,6 +105,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   session.ready = (async () => {
     await ensureMonoFontsLoaded();
     await document.fonts.ready;
+    await ensureTerminalSurfaceReady();
   })();
 
   return session;

@@ -2,14 +2,20 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = process.cwd();
-const ldflags = "$(inherited) -lbz2 -liconv";
+const ldflags =
+  "$(inherited) -lsqlite3 -lz -lbz2 -liconv $(PROJECT_DIR)/../../../../ios-linuxkit/deps/build/Release-iphoneos/libarchive.a";
 const projectYmlPath = join(root, "src-tauri/gen/apple/project.yml");
 const pbxPath = join(root, "src-tauri/gen/apple/terax.xcodeproj/project.pbxproj");
 
 if (existsSync(projectYmlPath)) {
   const original = readFileSync(projectYmlPath, "utf8");
   let next = original;
-  if (!next.includes(`OTHER_LDFLAGS: ${ldflags}`)) {
+  if (next.includes("OTHER_LDFLAGS:")) {
+    next = next.replace(
+      /^(\s+)OTHER_LDFLAGS:.*(?:\n\1OTHER_LDFLAGS:.*)*/m,
+      `        OTHER_LDFLAGS: ${ldflags}`,
+    );
+  } else if (!next.includes(`OTHER_LDFLAGS: ${ldflags}`)) {
     next = next.replace(
       /(\n\s+EXCLUDED_ARCHS\[sdk=iphoneos\*\]: x86_64)/,
       `$1\n        OTHER_LDFLAGS: ${ldflags}`,
@@ -32,7 +38,10 @@ const next = original.replace(/buildSettings = \{[\s\S]*?\n\t\t\t\};/g, (block) 
   }
   patchedBlocks += 1;
   if (block.includes("OTHER_LDFLAGS")) {
-    return block;
+    return block.replace(
+      /OTHER_LDFLAGS = "[^"]*";/,
+      `OTHER_LDFLAGS = "${ldflags}";`,
+    );
   }
   return block.replace(
     /(\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = io\.carmo\.terax;)/,

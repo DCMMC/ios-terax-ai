@@ -1,4 +1,5 @@
-import { FitAddon, Terminal } from "ghostty-web";
+import { FitAddon, Terminal, init } from "ghostty-web";
+import ghosttyWasmUrl from "ghostty-web/ghostty-vt.wasm?url";
 
 export { FitAddon, Terminal };
 
@@ -9,6 +10,13 @@ export type TerminalSearchAddon = {
   findPrevious: (query: string, options?: unknown) => void;
   clearDecorations: () => void;
 };
+
+let ready: Promise<void> | null = null;
+
+export function ensureTerminalSurfaceReady(): Promise<void> {
+  ready ??= init(ghosttyWasmUrl);
+  return ready;
+}
 
 type GhosttyCell = {
   codepoint: number;

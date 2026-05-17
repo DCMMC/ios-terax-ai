@@ -313,6 +313,10 @@ impl NativePtySession {
     }
 }
 
+pub fn ensure_booted() -> Result<(), String> {
+    boot()
+}
+
 impl Drop for NativePtySession {
     fn drop(&mut self) {
         self.close();

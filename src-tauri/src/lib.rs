@@ -102,6 +102,11 @@ pub fn run() {
         .manage(pty::PtyState::default())
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
+        .setup(|_app| {
+            #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+            modules::ios_linuxkit_native::ensure_booted()?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
             pty::pty_write,

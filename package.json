@@ -11,7 +11,14 @@
     "tauri": "bunx tauri",
     "ios:init": "bunx tauri ios init",
     "ios:dev": "bunx tauri ios dev",
-    "ios:build": "bunx tauri ios build"
+    "ios:build": "bunx tauri ios build",
+    "ios:linuxkit:build": "bun scripts/ios-linuxkit.mjs build-linuxkit",
+    "ios:rootfs:sync": "bun scripts/ios-linuxkit.mjs sync-root",
+    "ios:prepare": "bun scripts/ios-linuxkit.mjs prepare",
+    "ios:build:device": "bun scripts/ios-linuxkit.mjs build",
+    "ios:deploy": "bun scripts/ios-linuxkit.mjs deploy",
+    "ios:launch": "bun scripts/ios-linuxkit.mjs launch",
+    "ios:test-build": "bun scripts/ios-linuxkit.mjs test"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.71",

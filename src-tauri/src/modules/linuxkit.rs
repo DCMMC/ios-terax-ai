@@ -9,6 +9,8 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::hash::{Hash, Hasher};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -1599,12 +1601,15 @@ fn init_linuxkit_root_dir() -> Result<PathBuf, String> {
         .unwrap_or_else(std::env::temp_dir)
         .join("Terax")
         .join("ios-linuxkit-root");
+    let tar_path = locate_root_tar()?;
+    let fingerprint = root_archive_fingerprint(&tar_path)?;
     let marker = target.join(ROOT_READY_MARKER);
-    if marker.exists() && is_prepared_linuxkit_root(&target) {
+    if fs::read_to_string(&marker).is_ok_and(|value| value == fingerprint)
+        && is_prepared_linuxkit_root(&target)
+    {
         return Ok(target);
     }
 
-    let tar_path = locate_root_tar()?;
     if target.exists() {
         fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
     }
@@ -1612,8 +1617,26 @@ fn init_linuxkit_root_dir() -> Result<PathBuf, String> {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     import_linuxkit_root_tar(&tar_path, &target)?;
-    fs::write(&marker, b"ready").map_err(|e| e.to_string())?;
+    fs::write(&marker, fingerprint).map_err(|e| e.to_string())?;
     Ok(target)
+}
+
+fn root_archive_fingerprint(path: &Path) -> Result<String, String> {
+    let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
+    let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    metadata.len().hash(&mut hasher);
+
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).map_err(|e| e.to_string())?;
+        if read == 0 {
+            break;
+        }
+        hasher.write(&buffer[..read]);
+    }
+
+    Ok(format!("v2:{:016x}:{}", hasher.finish(), metadata.len()))
 }
 
 fn is_prepared_linuxkit_root(root: &Path) -> bool {

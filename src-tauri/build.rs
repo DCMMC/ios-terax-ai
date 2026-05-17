@@ -27,13 +27,12 @@ fn build_ios_linuxkit_bridge(target: &str) {
     let manifest_dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let linuxkit_dir = manifest_dir.join("../../ios-linuxkit");
     let platform_dir = if target.contains("sim") {
-        "DebugLinux-iphonesimulator"
+        "Debug-ApplePleaseFixFB19282108-iphonesimulator"
     } else {
-        "DebugLinux-iphoneos"
+        "Debug-ApplePleaseFixFB19282108-iphoneos"
     };
     let build_dir = linuxkit_dir.join("build").join(platform_dir);
     let meson_dir = build_dir.join("meson");
-    let deps_dir = meson_dir.join("deps");
     let libarchive_dir = if target.contains("sim") {
         linuxkit_dir.join("deps/build/Release")
     } else {
@@ -42,35 +41,31 @@ fn build_ios_linuxkit_bridge(target: &str) {
 
     println!("cargo:rerun-if-changed=native/ios_linuxkit_bridge.c");
     println!("cargo:rerun-if-changed={}", build_dir.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        build_dir.join("libish.a").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        meson_dir.join("libish_emu.a").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        meson_dir.join("libfakefs.a").display()
+    );
 
     cc::Build::new()
         .file("native/ios_linuxkit_bridge.c")
+        .file(linuxkit_dir.join("tools/fakefs.c"))
         .file(linuxkit_dir.join("util/fchdir.c"))
         .include(&linuxkit_dir)
         .include(linuxkit_dir.join("app"))
+        .include(linuxkit_dir.join("deps/libarchive/libarchive"))
         .flag("-fblocks")
         .compile("terax_ios_linuxkit_bridge");
 
-    cc::Build::new()
-        .file("native/ios_linuxkit_emu_arm64.c")
-        .include(&linuxkit_dir)
-        .include(deps_dir.join("linux/include"))
-        .include(deps_dir.join("linux/arch/ish/include/generated"))
-        .include(linuxkit_dir.join("deps/linux/arch/ish/kernel"))
-        .include(linuxkit_dir.join("deps/linux/arch/ish/include"))
-        .include(linuxkit_dir.join("deps/linux/include"))
-        .include(linuxkit_dir.join("deps"))
-        .define("GUEST_ARM64", "1")
-        .define("ENGINE_ASBESTOS", "1")
-        .flag("-include")
-        .flag("user.h")
-        .flag("-include")
-        .flag("linux/kconfig.h")
-        .compile("terax_ios_linuxkit_emu_arm64");
-
     println!("cargo:rustc-link-search=native={}", build_dir.display());
     println!("cargo:rustc-link-search=native={}", meson_dir.display());
-    println!("cargo:rustc-link-search=native={}", deps_dir.display());
     println!(
         "cargo:rustc-link-search=native={}",
         libarchive_dir.display()
@@ -78,15 +73,10 @@ fn build_ios_linuxkit_bridge(target: &str) {
 
     println!("cargo:rustc-link-lib=sqlite3");
     println!("cargo:rustc-link-lib=z");
+    println!("cargo:rustc-link-lib=bz2");
     println!("cargo:rustc-link-lib=iconv");
     println!("cargo:rustc-link-lib=static=archive");
-    println!("cargo:rustc-link-lib=static=iSHApp");
-    println!("cargo:rustc-link-lib=static:+whole-archive=iSHLinux");
-    println!("cargo:rustc-link-lib=static:+whole-archive=linux");
+    println!("cargo:rustc-link-lib=static:+whole-archive=ish");
     println!("cargo:rustc-link-lib=static=fakefs");
     println!("cargo:rustc-link-lib=static=ish_emu");
-
-    println!("cargo:rustc-link-arg=-Wl,-ld_classic");
-    println!("cargo:rustc-link-arg=-Wl,-sectalign,__DATA,__percpu_first,1000");
-    println!("cargo:rustc-link-arg=-Wl,-sectalign,__DATA,__tracepoints,20");
 }
