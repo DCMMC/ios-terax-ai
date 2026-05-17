@@ -1,5 +1,5 @@
 import { useTheme } from "@/modules/theme";
-import type { SearchAddon } from "@xterm/addon-search";
+import type { TerminalSearchAddon } from "./lib/terminalSurface";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { useTerminalSession } from "./lib/useTerminalSession";
 
@@ -18,7 +18,7 @@ type Props = {
   /** This leaf is the active pane within its tab — receives auto-focus. */
   focused?: boolean;
   initialCwd?: string;
-  onSearchReady?: (leafId: number, addon: SearchAddon) => void;
+  onSearchReady?: (leafId: number, addon: TerminalSearchAddon) => void;
   onExit?: (leafId: number, code: number) => void;
   onCwd?: (leafId: number, cwd: string) => void;
 };

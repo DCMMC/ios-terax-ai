@@ -1,9 +1,12 @@
 mod modules;
 
 use modules::{fs, net, pty, secrets, shell, workspace};
+#[cfg(not(mobile))]
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+#[cfg(not(mobile))]
 use tauri_plugin_window_state::StateFlags;
 
+#[cfg(not(mobile))]
 #[tauri::command]
 async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Result<(), String> {
     let url_path = match tab.as_deref() {
@@ -61,20 +64,25 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_process::init())
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_process::init());
+
+    // Skip restoring VISIBLE — frontend calls window.show() after first
+    // paint so the user never sees a transparent window-shadow flash on
+    // Windows/Linux. These plugins are desktop-only.
+    #[cfg(not(mobile))]
+    let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
-        // Skip restoring VISIBLE — frontend calls window.show() after first
-        // paint so the user never sees a transparent window-shadow flash on
-        // Windows/Linux.
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
                 .build(),
         )
-        .plugin(tauri_plugin_autostart::Builder::new().build())
-        .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_autostart::Builder::new().build());
+
+    builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(tauri_plugin_log::log::LevelFilter::Info)
@@ -114,6 +122,7 @@ pub fn run() {
             workspace::wsl_list_distros,
             workspace::wsl_default_distro,
             workspace::wsl_home,
+            #[cfg(not(mobile))]
             open_settings_window,
             secrets::secrets_get,
             secrets::secrets_set,

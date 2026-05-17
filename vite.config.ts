@@ -1,5 +1,5 @@
+import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
-import react from "@vitejs/plugin-react";
 import path from "path";
 import { defineConfig } from "vite";
 
@@ -7,10 +7,15 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async ({ mode }) => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [preact(), tailwindcss()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      react: "preact/compat",
+      "react-dom": "preact/compat",
+      "react-dom/client": "preact/compat/client",
+      "react/jsx-runtime": "preact/jsx-runtime",
+      "react/jsx-dev-runtime": "preact/jsx-dev-runtime",
     },
   },
   esbuild: {
@@ -57,11 +62,10 @@ export default defineConfig(async ({ mode }) => ({
           if (id.includes("/motion/") || id.includes("framer-motion"))
             return "motion";
           if (
-            id.includes("/react-dom/") ||
-            id.includes("/react/") ||
-            id.includes("/scheduler/")
+            id.includes("/preact/") ||
+            id.includes("/preact-render-to-string/")
           )
-            return "react";
+            return "preact";
           if (id.includes("@radix-ui/") || id.includes("/radix-ui/"))
             return "radix";
         },

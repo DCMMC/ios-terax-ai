@@ -1,7 +1,7 @@
 /**
  * Runtime resolution of shadcn CSS custom properties into concrete rgb strings.
  *
- * globals.css declares tokens in oklch(), which xterm.js (WebGL) and
+ * globals.css declares tokens in oklch(), which ghostty-web and
  * CodeMirror's static theme builder can't consume directly. We resolve each
  * token through the browser: setting `color: var(--x)` on a detached element
  * forces computation into rgb form, which both consumers accept.

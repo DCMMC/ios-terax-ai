@@ -164,10 +164,10 @@ html[data-chrome="borderless"] #settings-root {
 }
 
 /*
- * xterm.js overrides — kept outside @layer so they win against the addon's
+ * legacy terminal overrides — kept outside @layer so they win against the addon's
  * own stylesheet (which is not in any layer and would otherwise override).
  *
- * Newer xterm renders scrollbars as real <div class="scrollbar vertical|horizontal">
+ * Older xterm renderers used scrollbars as real <div class="scrollbar vertical|horizontal">
  * children rather than relying on native overflow scrollbars. Both code paths exist
  * across versions, so we hide both.
  */

@@ -31,7 +31,7 @@ Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React
 ## Features
 
 **Terminal**
-- xterm.js + WebGL renderer, multi-tab with background streaming
+- ghostty-web canvas renderer, multi-tab with background streaming
 - Native PTY backend via `portable-pty` (zsh, bash, pwsh, …)
 - Shell integration (cwd reporting, prompt markers) via injected init scripts
 - Inline search, link detection, true-color
@@ -83,25 +83,25 @@ The default shell is detected in this order: `pwsh.exe` (PowerShell 7+) → `pow
 
 **Prerequisites**
 - Rust (stable) — https://rustup.rs
-- Node 20+ and [pnpm](https://pnpm.io)
+- [Bun](https://bun.sh)
 - Platform-specific Tauri prerequisites — https://tauri.app/start/prerequisites/
 
 **Run**
 ```bash
-pnpm install
-pnpm tauri dev          # development
-pnpm tauri build        # production bundle
+bun install
+bun run tauri dev          # development
+bun run tauri build        # production bundle
 ```
 
 **Checks**
 ```bash
-pnpm exec tsc --noEmit          # frontend type-check
+bunx tsc --noEmit          # frontend type-check
 cd src-tauri && cargo clippy    # Rust lint
 ```
 
 ## Tech stack
 
-Tauri 2 · Rust · `portable-pty` · React 19 · TypeScript · xterm.js · CodeMirror 6 · Vercel AI SDK v6 · Tailwind v4 · shadcn/ui · Zustand
+Tauri 2 · Rust · `portable-pty` · React 19 · TypeScript · ghostty-web · CodeMirror 6 · Vercel AI SDK v6 · Tailwind v4 · shadcn/ui · Zustand
 
 ## Contributing
 

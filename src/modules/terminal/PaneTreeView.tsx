@@ -4,13 +4,13 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import type { SearchAddon } from "@xterm/addon-search";
+import type { TerminalSearchAddon } from "./lib/terminalSurface";
 import { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 import type { PaneNode } from "./lib/panes";
 
 type LeafBundle = {
   setRef: (h: TerminalPaneHandle | null) => void;
-  onSearch: (addon: SearchAddon) => void;
+  onSearch: (addon: TerminalSearchAddon) => void;
   onCwd: (cwd: string) => void;
   onExit: (code: number) => void;
 };

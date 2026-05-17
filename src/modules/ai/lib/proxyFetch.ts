@@ -51,13 +51,13 @@ export function createProxyFetch(
   opts: { allowPrivateNetwork?: boolean } = {},
 ): typeof fetch {
   const allowPrivate = opts.allowPrivateNetwork === true;
-  return async (input, init) => proxyFetchImpl(input, init, allowPrivate);
+  return ((input, init) => proxyFetchImpl(input, init, allowPrivate)) as typeof fetch;
 }
 
 /** Backwards-compatible default — refuses private networks unless the caller
  *  explicitly opts in via {@link createProxyFetch}. */
-export const proxyFetch: typeof fetch = (input, init) =>
-  proxyFetchImpl(input, init, false);
+export const proxyFetch: typeof fetch = ((input, init) =>
+  proxyFetchImpl(input, init, false)) as typeof fetch;
 
 async function proxyFetchImpl(
   input: RequestInfo | URL,

@@ -1,6 +1,6 @@
 import { ensureMonoFontsLoaded } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import type { SearchAddon } from "@xterm/addon-search";
+import type { TerminalSearchAddon } from "./terminalSurface";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { DormantRing } from "./dormantRing";
 import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
@@ -19,7 +19,7 @@ import {
 } from "./rendererPool";
 
 type Callbacks = {
-  onSearchReady?: (addon: SearchAddon) => void;
+  onSearchReady?: (addon: TerminalSearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
 };
@@ -281,7 +281,7 @@ type Options = {
   visible: boolean;
   focused?: boolean;
   initialCwd?: string;
-  onSearchReady?: (addon: SearchAddon) => void;
+  onSearchReady?: (addon: TerminalSearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
 };

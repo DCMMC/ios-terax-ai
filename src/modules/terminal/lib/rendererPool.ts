@@ -1,13 +1,13 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { FitAddon } from "@xterm/addon-fit";
-import { SearchAddon } from "@xterm/addon-search";
-import { SerializeAddon } from "@xterm/addon-serialize";
-import { WebLinksAddon } from "@xterm/addon-web-links";
-import { WebglAddon } from "@xterm/addon-webgl";
-import { Terminal } from "@xterm/xterm";
+import {
+  createSearchAdapter,
+  serializeTerminal,
+  FitAddon,
+  Terminal,
+  type TerminalSearchAddon,
+} from "./terminalSurface";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -29,11 +29,8 @@ export type Slot = {
   readonly id: number;
   readonly term: Terminal;
   readonly fitAddon: FitAddon;
-  readonly searchAddon: SearchAddon;
-  readonly serializeAddon: SerializeAddon;
+  readonly searchAddon: TerminalSearchAddon;
   readonly host: HTMLDivElement;
-  webglAddon: WebglAddon | null;
-  webglCanvases: HTMLCanvasElement[];
   currentLeafId: number | null;
   oscDisposers: (() => void)[];
   observer: ResizeObserver | null;
@@ -91,14 +88,8 @@ function termOptions() {
 function createSlot(): Slot {
   const term = new Terminal(termOptions());
   const fitAddon = new FitAddon();
-  const searchAddon = new SearchAddon();
-  const serializeAddon = new SerializeAddon();
+  const searchAddon = createSearchAdapter(term);
   term.loadAddon(fitAddon);
-  term.loadAddon(searchAddon);
-  term.loadAddon(serializeAddon);
-  term.loadAddon(
-    new WebLinksAddon((_e, uri) => openUrl(uri).catch(console.error)),
-  );
 
   const host = document.createElement("div");
   host.style.cssText = "width:100%;height:100%;";
@@ -111,10 +102,7 @@ function createSlot(): Slot {
     term,
     fitAddon,
     searchAddon,
-    serializeAddon,
     host,
-    webglAddon: null,
-    webglCanvases: [],
     currentLeafId: null,
     oscDisposers: [],
     observer: null,
@@ -128,7 +116,6 @@ function createSlot(): Slot {
     lastUsedAt: 0,
   };
 
-  attachWebgl(slot);
 
   term.attachCustomKeyEventHandler((event) => {
     const leafId = slot.currentLeafId;
@@ -203,7 +190,7 @@ export type AcquireParams = {
   rows: number;
   onScopeChange: (cols: number, rows: number) => void;
   registerOsc: (term: Terminal) => (() => void)[];
-  onSearchReady: (addon: SearchAddon) => void;
+  onSearchReady: (addon: TerminalSearchAddon) => void;
 };
 
 export function acquireSlot(params: AcquireParams): Slot {
@@ -386,7 +373,7 @@ function serializeSlot(slot: Slot): SerializeOutput {
       SNAPSHOT_SCROLLBACK_CAP,
       usePreferencesStore.getState().terminalScrollback,
     );
-    snapshot = slot.serializeAddon.serialize({ scrollback: cap });
+    snapshot = serializeTerminal(slot.term, cap);
   } catch (e) {
     console.warn("[terax] serialize failed:", e);
   }
@@ -419,103 +406,8 @@ function detachSlotFromLeaf(slot: Slot): void {
   slot.lastUsedAt = performance.now();
 }
 
-const WEBGL_RECOVERY_DELAY_MS = 250;
-
-function attachWebgl(slot: Slot): void {
-  if (slot.webglAddon || !slot.term.element) return;
-  if (!usePreferencesStore.getState().terminalWebglEnabled) return;
-  const elem = slot.term.element;
-  const before = new Set<HTMLCanvasElement>(
-    elem.querySelectorAll<HTMLCanvasElement>("canvas"),
-  );
-  try {
-    const webgl = new WebglAddon();
-    webgl.onContextLoss(() => {
-      const cur = slot.webglAddon;
-      if (cur === webgl) {
-        slot.webglAddon = null;
-        slot.webglCanvases = [];
-      }
-      try {
-        webgl.dispose();
-      } catch {}
-      // Recovery: WebKit may transiently lose contexts on sleep/wake or GPU
-      // reset; without re-attach the slot would silently fall back to DOM
-      // forever. Defer past WebKit's reset window before retrying.
-      setTimeout(() => {
-        if (slot.webglAddon) return;
-        if (!usePreferencesStore.getState().terminalWebglEnabled) return;
-        attachWebgl(slot);
-      }, WEBGL_RECOVERY_DELAY_MS);
-    });
-    slot.term.loadAddon(webgl);
-    const after = elem.querySelectorAll<HTMLCanvasElement>("canvas");
-    const added: HTMLCanvasElement[] = [];
-    for (const c of after) if (!before.has(c)) added.push(c);
-    slot.webglAddon = webgl;
-    slot.webglCanvases = added;
-  } catch (e) {
-    console.warn("[terax-webgl] unavailable:", e);
-  }
-}
-
-function disposeSlotWebgl(slot: Slot): void {
-  if (!slot.webglAddon) return;
-  const addon = slot.webglAddon;
-  for (const canvas of slot.webglCanvases) releaseCanvasContext(canvas);
-  slot.webglCanvases = [];
-  try {
-    addon.dispose();
-  } catch (e) {
-    console.warn("[terax-webgl] dispose failed:", e);
-  }
-  try {
-    const r = (
-      addon as unknown as { _renderer?: Record<string, unknown> | null }
-    )._renderer;
-    if (r) {
-      r._canvas = null;
-      r._gl = null;
-      r._charAtlas = null;
-      r._atlas = null;
-    }
-    (
-      addon as unknown as { _renderer?: unknown; _renderService?: unknown }
-    )._renderer = null;
-    (
-      addon as unknown as { _renderer?: unknown; _renderService?: unknown }
-    )._renderService = null;
-  } catch {}
-  slot.webglAddon = null;
-}
-
-function releaseCanvasContext(canvas: HTMLCanvasElement): void {
-  let gl: WebGL2RenderingContext | WebGLRenderingContext | null = null;
-  try {
-    gl = canvas.getContext("webgl2") as WebGL2RenderingContext | null;
-  } catch {}
-  if (!gl) {
-    try {
-      gl = canvas.getContext("webgl") as WebGLRenderingContext | null;
-    } catch {}
-  }
-  if (gl) {
-    try {
-      const ext = gl.getExtension("WEBGL_lose_context");
-      if (ext && !gl.isContextLost()) ext.loseContext();
-    } catch {}
-  }
-  try {
-    canvas.width = 0;
-    canvas.height = 0;
-  } catch {}
-}
-
-export function applyWebglPreference(enabled: boolean): void {
-  for (const slot of slots) {
-    if (enabled && !slot.webglAddon) attachWebgl(slot);
-    else if (!enabled && slot.webglAddon) disposeSlotWebgl(slot);
-  }
+export function applyWebglPreference(_enabled: boolean): void {
+  // ghostty-web uses its own canvas renderer; xterm WebGL toggles are ignored.
 }
 
 export function applyFontSize(size: number): void {

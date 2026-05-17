@@ -1,15 +1,25 @@
-import type { IMarker, Terminal } from "@xterm/xterm";
+import type { Terminal } from "./terminalSurface";
+
+type Disposable = { dispose: () => void };
+type IMarker = { isDisposed?: boolean; dispose: () => void };
+type XtermCompat = Terminal & {
+  parser?: {
+    registerOscHandler?: (ident: number, handler: (data: string) => boolean) => Disposable;
+  };
+  registerMarker?: (cursorYOffset: number) => IMarker | null;
+};
 
 export function registerCwdHandler(
   term: Terminal,
   onCwd: (cwd: string) => void,
 ): () => void {
-  const d = term.parser.registerOscHandler(7, (data) => {
+  const compat = term as XtermCompat;
+  const d = compat.parser?.registerOscHandler?.(7, (data: string) => {
     const cwd = parseOsc7(data);
     if (cwd) onCwd(cwd);
     return true;
   });
-  return () => d.dispose();
+  return () => d?.dispose();
 }
 
 export type PromptTracker = {
@@ -18,18 +28,19 @@ export type PromptTracker = {
 };
 
 export function registerPromptTracker(term: Terminal): PromptTracker {
+  const compat = term as XtermCompat;
   let marker: IMarker | null = null;
-  const d = term.parser.registerOscHandler(133, (data) => {
+  const d = compat.parser?.registerOscHandler?.(133, (data: string) => {
     if (data.startsWith("A")) {
       marker?.dispose();
-      marker = term.registerMarker(0);
+      marker = compat.registerMarker?.(0) ?? null;
     }
     return true;
   });
   return {
     getMarker: () => (marker && !marker.isDisposed ? marker : null),
     dispose: () => {
-      d.dispose();
+      d?.dispose();
       marker?.dispose();
       marker = null;
     },

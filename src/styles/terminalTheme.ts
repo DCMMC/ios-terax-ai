@@ -1,8 +1,8 @@
 import { readAppTokens } from "@/styles/tokens";
-import type { ITheme } from "@xterm/xterm";
+import type { ITheme } from "ghostty-web";
 
 /**
- * xterm.js ITheme is 18 colors: bg/fg/cursor/cursorAccent/selection + ANSI 16.
+ * ghostty-web ITheme-compatible theme is 18 colors: bg/fg/cursor/cursorAccent/selection + ANSI 16.
  *
  * Chrome colors (background, foreground, cursor, selection) come from shadcn's
  * globals.css tokens so the terminal visually fuses with the app. ANSI 16
@@ -47,7 +47,7 @@ export const syntaxPalette = {
 } as const;
 
 /**
- * Builds an xterm theme at runtime from the current app tokens. Must be
+ * Builds a terminal theme at runtime from the current app tokens. Must be
  * called after the DOM is ready (after first paint); globals.css variables
  * are resolved via getComputedStyle.
  */

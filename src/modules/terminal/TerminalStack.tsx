@@ -1,5 +1,5 @@
 import type { Tab } from "@/modules/tabs";
-import type { SearchAddon } from "@xterm/addon-search";
+import type { TerminalSearchAddon } from "./lib/terminalSurface";
 import { useEffect, useMemo, useRef } from "react";
 import { PaneTreeView } from "./PaneTreeView";
 import type { TerminalPaneHandle } from "./TerminalPane";
@@ -10,7 +10,7 @@ type Props = {
   activeId: number;
   /** Register/unregister handle by leaf id (not tab id). */
   registerHandle: (leafId: number, handle: TerminalPaneHandle | null) => void;
-  onSearchReady: (leafId: number, addon: SearchAddon) => void;
+  onSearchReady: (leafId: number, addon: TerminalSearchAddon) => void;
   onCwd: (leafId: number, cwd: string) => void;
   onExit: (leafId: number, code: number) => void;
   onFocusLeaf: (tabId: number, leafId: number) => void;
@@ -18,7 +18,7 @@ type Props = {
 
 type Bundle = {
   setRef: (h: TerminalPaneHandle | null) => void;
-  onSearch: (addon: SearchAddon) => void;
+  onSearch: (addon: TerminalSearchAddon) => void;
   onCwd: (cwd: string) => void;
   onExit: (code: number) => void;
 };

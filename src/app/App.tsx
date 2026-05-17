@@ -70,7 +70,7 @@ import {
   type WorkspaceEnv,
 } from "@/modules/workspace";
 import { homeDir } from "@tauri-apps/api/path";
-import type { SearchAddon } from "@xterm/addon-search";
+import type { TerminalSearchAddon } from "@/modules/terminal/lib/terminalSurface";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
@@ -111,9 +111,9 @@ export default function App() {
   }, [tabs, activeId]);
   const activeLeafId = activeTerminalTab?.activeLeafId ?? null;
 
-  const searchAddons = useRef<Map<number, SearchAddon>>(new Map());
-  const [activeSearchAddon, setActiveSearchAddon] =
-    useState<SearchAddon | null>(null);
+  const searchAddons = useRef<Map<number, TerminalSearchAddon>>(new Map());
+  const [activeTerminalSearchAddon, setActiveTerminalSearchAddon] =
+    useState<TerminalSearchAddon | null>(null);
   const searchInlineRef = useRef<SearchInlineHandle | null>(null);
   const terminalRefs = useRef<Map<number, TerminalPaneHandle>>(new Map());
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
@@ -199,7 +199,7 @@ export default function App() {
       terminalRefs.current.clear();
       editorRefs.current.clear();
       previewRefs.current.clear();
-      setActiveSearchAddon(null);
+      setActiveTerminalSearchAddon(null);
       setActiveEditorHandle(null);
       setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
       setHome(nextHome);
@@ -304,16 +304,16 @@ export default function App() {
   );
 
   useEffect(() => {
-    setActiveSearchAddon(
+    setActiveTerminalSearchAddon(
       activeLeafId !== null ? (searchAddons.current.get(activeLeafId) ?? null) : null,
     );
     setActiveEditorHandle(editorRefs.current.get(activeId) ?? null);
   }, [activeId, activeLeafId]);
 
   const handleSearchReady = useCallback(
-    (leafId: number, addon: SearchAddon) => {
+    (leafId: number, addon: TerminalSearchAddon) => {
       searchAddons.current.set(leafId, addon);
-      if (leafId === activeLeafId) setActiveSearchAddon(addon);
+      if (leafId === activeLeafId) setActiveTerminalSearchAddon(addon);
     },
     [activeLeafId],
   );
@@ -470,7 +470,7 @@ export default function App() {
     };
     const onUp = (e: MouseEvent) => {
       if (isInsideAi(e.target)) return;
-      // Defer one tick so xterm/CodeMirror finalize the selection.
+      // Defer one tick so terminal/CodeMirror finalize the selection.
       setTimeout(() => {
         const text = captureActiveSelection();
         if (text && text.trim().length > 0) {
@@ -736,10 +736,10 @@ export default function App() {
   );
 
   const searchTarget = useMemo<SearchTarget>(() => {
-    if (isTerminalTab && activeSearchAddon)
+    if (isTerminalTab && activeTerminalSearchAddon)
       return {
         kind: "terminal",
-        addon: activeSearchAddon,
+        addon: activeTerminalSearchAddon,
         focus: () => terminalRefs.current.get(activeId)?.focus(),
       };
     if (isEditorTab && activeEditorHandle)
@@ -749,7 +749,7 @@ export default function App() {
         focus: () => activeEditorHandle.focus(),
       };
     return null;
-  }, [isTerminalTab, isEditorTab, activeId, activeSearchAddon, activeEditorHandle]);
+  }, [isTerminalTab, isEditorTab, activeId, activeTerminalSearchAddon, activeEditorHandle]);
 
   const activeCwd =
     activeTab?.kind === "terminal" ? (activeTab.cwd ?? null) : null;

@@ -4,12 +4,12 @@ Terax loads `TERAX.md` from the workspace root as agent memory (similar to AGENT
 
 ## Project
 
-**Terax** — open-source AI-native terminal emulator. Tauri 2 + Rust (`portable-pty`) backend, React 19 + TypeScript + xterm.js (webgl) client, BYOK AI via Vercel AI SDK v6.
+**Terax** — open-source AI-native terminal emulator. Tauri 2 + Rust (`portable-pty`) backend, React 19 + TypeScript + ghostty-web terminal client, BYOK AI via Vercel AI SDK v6.
 
 - Bundle id: `app.crynta.terax`
-- Package manager: **pnpm**
+- Package manager: **Bun**
 - Platforms: macOS, Linux, Windows
-- Frontend type-check: `pnpm exec tsc --noEmit`
+- Frontend type-check: `bunx tsc --noEmit`
 - Rust checks: `cd src-tauri && cargo check && cargo clippy`
 
 ## Architecture
@@ -18,7 +18,7 @@ Terax loads `TERAX.md` from the workspace root as agent memory (similar to AGENT
 
 **Rust (`src-tauri/`)** owns all OS access. The webview never touches the FS, processes, or shells directly — everything goes through `invoke()` calls to commands registered in `src-tauri/src/lib.rs`:
 
-- `pty::pty_*` — long-lived interactive PTY sessions (xterm ↔ portable-pty), managed by `PtyState` (`RwLock<HashMap<id, Session>>`). Output streams via a Tauri `Channel<PtyEvent>`.
+- `pty::pty_*` — long-lived interactive PTY sessions (ghostty-web ↔ portable-pty), managed by `PtyState` (`RwLock<HashMap<id, Session>>`). Output streams via a Tauri `Channel<PtyEvent>`.
 - `fs::tree::*`, `fs::file::*`, `fs::mutate::*` — file explorer + editor IO.
 - `fs::search::*`, `fs::grep::*` — fuzzy file finder + content search (powered by `ignore` + `grep-*` crates).
 - `shell::shell_run_command` — **one-shot** subshell exec used by AI tools. Distinct from PTY sessions; not the user's interactive terminal. On Windows it shells out via PowerShell (`-NoProfile -Command`); on Unix via `$SHELL -lc`. Shared helper `build_oneshot_command`.
@@ -52,7 +52,7 @@ Single-window React app. Path alias `@/*` → `src/*`. Tabs are tagged-union (`{
 
 Each module is self-contained, exports a thin barrel via `index.ts`, and owns its hooks under `lib/`.
 
-- **terminal/** — `TerminalStack` keeps one mounted xterm per tab via `useTerminalSession` + `pty-bridge`. `osc-handlers.ts` parses OSC 7 (with Windows drive-letter normalization: `/C:/Users/foo` → `C:/Users/foo`) and OSC 133 markers. Themes in `themes.ts`.
+- **terminal/** — `TerminalStack` keeps one mounted ghostty-web terminal per tab via `useTerminalSession` + `pty-bridge`. `osc-handlers.ts` parses OSC 7 (with Windows drive-letter normalization: `/C:/Users/foo` → `C:/Users/foo`) and OSC 133 markers. Themes in `themes.ts`.
 - **editor/** — CodeMirror 6 stack (`EditorStack` mirrors `TerminalStack`). `extensions.ts` configures language modes; supports vim mode and prebuilt themes (Tokyo Night, Nord, GitHub, Atom One, Aura, Copilot, Xcode).
 - **explorer/** — file tree with Material/Catppuccin icons (`iconResolver.ts`), fuzzy search, keyboard nav, inline rename, context actions. Backslash-aware `basename`.
 - **preview/** — auto-detected dev-server preview tab (status-bar pill suggests opening when a localhost URL is detected).
@@ -83,7 +83,7 @@ BYOK. Multi-provider via `@ai-sdk/*`: **OpenAI, Anthropic, Google, Groq, xAI, Ce
 
 ### UI conventions
 
-- **shadcn/ui** is configured (`components.json`, style `radix-luma`, base `mist`, icon lib **hugeicons**). Primitives in `src/components/ui/` — don't hand-edit; re-run `pnpm dlx shadcn add` to upgrade.
+- **shadcn/ui** is configured (`components.json`, style `radix-luma`, base `mist`, icon lib **hugeicons**). Primitives in `src/components/ui/` — don't hand-edit; re-run `bunx shadcn add` to upgrade.
 - **AI Elements** (Vercel) live in `src/components/ai-elements/` from the `@ai-elements` registry in `components.json`. Same rule: regenerate, don't hand-patch — composition wrappers belong in `modules/ai/components/`.
 - **Tailwind v4** — no `tailwind.config.*`, config is in `src/App.css` via `@theme`. Use `cn()` from `@/lib/utils`.
 - Animation: `motion` (Framer Motion successor). Resizable layout: `react-resizable-panels`.
