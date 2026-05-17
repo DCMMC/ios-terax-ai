@@ -1,139 +1,97 @@
-<div align="center">
-  <img src="public/logo.png" width="144" height="144" alt="Terax" />
-  <h1>Terax</h1>
+# Terax iOS LinuxKit Experimental Fork
 
-  <p><strong>Open-source lightweight cross-platform AI-native terminal (ADE)</strong></p>
+This repository is an experimental fork of
+[`crynta/terax-ai`](https://github.com/crynta/terax-ai). It is not the
+upstream Terax desktop application and should not be treated as a stable
+release branch.
 
-  <p>
-    <img src="https://img.shields.io/badge/version-0.6.4-blue" alt="version" />
-    <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="license" />
-    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="platform" />
+The purpose of this fork is to make Terax run on iPadOS by replacing the
+desktop host shell/filesystem assumptions with an embedded
+[`ios-linuxkit`](https://github.com/rcarmo/ios-linuxkit) ARM64 Linux runtime.
+The original upstream README is preserved verbatim in
+[`ORIGINAL_README`](ORIGINAL_README).
 
-  </p>
-</div>
+![Terax running ios-linuxkit on iPadOS](docs/ios-linuxkit-terax.jpg)
 
----
+## Current Goal
 
-Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React 19. It pairs a native PTY backend with a modern UI — multi-tab terminals, an integrated code editor, a file explorer, and a first-class AI side-panel that works with your own API keys (or fully local models via LM Studio). Under 10 MB on disk, no telemetry, keys stored in the OS keychain.
+Terax started as a Tauri desktop terminal and AI workspace. Desktop builds run
+commands through host PTYs, host shells, and the host filesystem. iOS cannot
+provide that model directly, so this fork treats an embedded LinuxKit guest as
+the execution environment:
 
-## Screenshots
+- terminal sessions run inside the LinuxKit root filesystem
+- shell tools and long-running commands are routed into the guest
+- file explorer/editor operations are scoped to the guest filesystem
+- iOS remains the app container, UI, keychain, and packaging host
 
-<table>
-  <tr>
-    <td align="center"><img src="docs/terminal.png" alt="Terminal" /><br/><sub>Multi-tab terminal with WebGL rendering</sub></td>
-    <td align="center"><img src="docs/web-preview.png" alt="Web preview" /><br/><sub>Web preview of local dev servers</sub></td>
-  </tr>
-  <tr>
-    <td colspan="2" align="center"><img src="docs/ai-workflow.png" alt="AI window" /><br/><sub>AI agentic workflow with edit diffs in the code editor</sub></td>
-  </tr>
-</table>
+This is a porting experiment, not an App Store-ready product.
 
-## Features
+## Broad Changes From Upstream
 
-**Terminal**
-- ghostty-web canvas renderer, multi-tab with background streaming
-- Native PTY backend via `portable-pty` (zsh, bash, pwsh, …)
-- Shell integration (cwd reporting, prompt markers) via injected init scripts
-- Inline search, link detection, true-color
+The fork keeps the Terax React/Tauri UI structure, but changes the mobile
+backend and terminal plumbing:
 
-**Editor**
-- CodeMirror 6 with language support for TS/JS, Rust, Python, HTML/CSS, JSON, Markdown
-- Inline AI autocomplete and AI edit diffs
-- Vim mode
-- Prebuilt themes: Tokyo Night, Nord, GitHub, Atom One, Aura, Copilot, Xcode
+- Added reproducible iOS helper scripts around Tauri, Xcode, and
+  `../ios-linuxkit` in `scripts/ios-linuxkit.mjs`.
+- Added project patching for the generated Tauri iOS Xcode project, including
+  LinuxKit link flags and signing/build settings needed for `io.carmo.terax`.
+- Embedded the `ios-linuxkit` root archive under
+  `src-tauri/resources/ios-linuxkit/`.
+- Added a native C bridge that boots the LinuxKit fakefs root, creates device
+  nodes, mounts proc/devpts, configures DNS through Darwin `libresolv`, starts
+  login shells, and connects LinuxKit TTYs to Tauri PTY channels.
+- Added iOS-specific Rust command routing so existing Terax commands such as
+  `pty_*`, `shell_*`, and `fs_*` can target LinuxKit on mobile while desktop
+  builds keep their normal backends.
+- Swapped the iOS terminal input model to match the reference `ios-linuxkit`
+  terminal: Ghostty-Web renders the terminal, but native iOS text entry owns
+  software and hardware keyboard input.
+- Disabled Ghostty's Web text input surface on iOS and bridged native keyboard
+  input back to the normal `pty_write` path.
+- Added handling for terminal control/meta keys and special keys, including
+  Escape, Tab, arrows, Home/End, Page Up/Down, Delete, F1-F12, application
+  cursor mode, and Ctrl-C.
+- Adjusted the iPad UI integration where needed for settings, status/header
+  layout, and the left-side traffic-light spacing expected by the desktop UI.
 
-**File Explorer**
-- Catppuccin icon theme (Material Icon Theme resolver)
-- Fuzzy search, keyboard navigation, inline rename, context actions
+## Repository Layout Assumption
 
-**Web Preview**
-- Auto-detects local dev servers and opens them in a preview tab
-
-**AI (BYOK)**
-- Providers: OpenAI, Anthropic, Google, Groq, xAI, Cerebras, OpenAI-compatible
-- Local / offline models via LM Studio
-- Voice input, edit diffs, multi-agent and sub-agents
-- Snippets / skills, customizable system prompt
-- `TERAX.md` for project memory and configuration
-- Tasks, plans, search, file read/write tools with approval flow
-
-**Quality**
-- Lightweight and fast (~7 MB bundle)
-- API keys stored in the OS keychain 
-- No telemetry, no account required
-
-## Windows notes
-
-- **SmartScreen warning**: Windows will show "Windows protected your PC" on first launch because we (temporarily) don't have a code-signing certificate yet. Click **More info** → **Run anyway**. This is normal for unsigned open-source apps.
-
-The default shell is detected in this order: `pwsh.exe` (PowerShell 7+) → `powershell.exe` (Windows PowerShell 5.1) → `cmd.exe`.
-
-## Linux notes
-
-- **Arch / AUR**: install via `yay -S terax-bin` (or `paru`, etc.). Tracks the latest release.
-- **AppImage**: needs FUSE. Without it: `./Terax_*.AppImage --appimage-extract-and-run`. On Wayland with rendering glitches, try `WEBKIT_DISABLE_DMABUF_RENDERER=1`; otherwise use the `.deb` / `.rpm` which link against the system's GTK stack.
-
-## Configure AI
-
-1. Open **Settings → AI**.
-2. Pick a provider and paste your API key. For local inference, point Terax at your LM Studio endpoint.
-3. Keys are written to the OS keychain via `keyring` — they never touch disk or `localStorage`.
-
-## Build from source
-
-**Prerequisites**
-- Rust (stable) — https://rustup.rs
-- [Bun](https://bun.sh)
-- Platform-specific Tauri prerequisites — https://tauri.app/start/prerequisites/
-
-**Run**
-```bash
-bun install
-bun run tauri dev          # development
-bun run tauri build        # production bundle
-```
-
-**iOS / ios-linuxkit**
-
-The iOS port embeds the `ios-linuxkit` ARM64 guest as the execution backend. Terax keeps the same Tauri command surface, but mobile builds route PTY, shell, and filesystem operations into the embedded LinuxKit root instead of exposing the iOS host sandbox.
-
-Expected repository layout:
+Most iOS workflows assume the Terax fork and `ios-linuxkit` checkout are
+siblings:
 
 ```text
 ../ios-linuxkit
 ./terax
 ```
 
-Useful commands:
+Override the LinuxKit checkout with `IOS_LINUXKIT_DIR` if needed.
+
+## iOS Build Commands
+
+The iOS helper script prepends `TERAX_HOMEBREW_BIN` or
+`.tmp-homebrew/bin` to `PATH`, so the build can use a temporary Homebrew
+toolchain path instead of relying on the system prefix.
 
 ```bash
 bun run ios:linuxkit:build # build ios-linuxkit static libraries
-bun run ios:rootfs:sync    # copy ios-linuxkit root.tar.gz into Terax resources
+bun run ios:rootfs:sync    # copy ios-linuxkit root.tar.gz into Terax
 bun run ios:prepare        # build linuxkit and sync the rootfs
-bun run ios:build:device   # build signed device IPA
-bun run ios:deploy         # install IPA on IOS_DEVICE_ID
+bun run ios:build:device   # build a signed iOS device IPA
+bun run ios:deploy         # install the IPA on IOS_DEVICE_ID
 bun run ios:launch         # launch io.carmo.terax on IOS_DEVICE_ID
 bun run ios:test-build     # prepare, build, and deploy
 ```
 
-`scripts/ios-linuxkit.mjs` prepends `TERAX_HOMEBREW_BIN` or `.tmp-homebrew/bin` to `PATH`, so iOS build dependencies can be kept outside the system Homebrew prefix. By default it uses `../ios-linuxkit` and device `00008103-0015284626DB001E`; override with `IOS_LINUXKIT_DIR` and `IOS_DEVICE_ID`.
+The default device ID is currently set in `scripts/ios-linuxkit.mjs`; override
+it with `IOS_DEVICE_ID`.
 
-The iOS terminal bridge follows the reference terminal in `../ios-linuxkit/app/Terminal.m`, `TerminalView.m`, and `terminal/term.js`: Ghostty-Web renders the terminal, native iOS text entry owns software/hardware keyboard input, and input is bridged back to the normal `pty_write` path. The bridge handles control/meta keys, escape/tab/arrows, Home/End, Page Up/Down, Delete, F1-F12, application cursor mode, Ctrl-C, and disables Ghostty's Web text input surface on iOS. DNS is configured into `/etc/resolv.conf` using the same libresolv flow as the standard ios-linuxkit app.
+## Status
 
-**Checks**
-```bash
-bunx tsc --noEmit          # frontend type-check
-cd src-tauri && cargo clippy    # Rust lint
-```
+The fork has a working iOS build/deploy path and a LinuxKit-backed terminal
+bridge, but it is still under active debugging. The highest-risk areas remain
+terminal fidelity, process lifecycle edge cases, LinuxKit filesystem mapping,
+network behavior, and parity with the desktop UI.
 
-## Tech stack
-
-Tauri 2 · Rust · `portable-pty` · React 19 · TypeScript · ghostty-web · CodeMirror 6 · Vercel AI SDK v6 · Tailwind v4 · shadcn/ui · Zustand
-
-## Contributing
-
-Issues and PRs are welcome! Feel free to open issues, suggest features, or submit pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
-
-## License
-
-Terax is licensed under the Apache-2.0 License. For more information on our dependencies, see [Apache License 2.0](LICENSE).
+Use the upstream project for normal Terax usage. Use this fork only when
+working on the iOS/LinuxKit integration.
