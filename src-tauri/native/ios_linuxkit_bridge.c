@@ -170,6 +170,12 @@ static const struct tty_driver_ops g_ios_pty_ops = {
 
 static void terax_handle_exit(struct task *task, int code) {
     if (!task) return;
+    // Match ios-linuxkit's AppDelegate.m: only init and direct children of init
+    // represent top-level sessions. Foreground commands spawned by the shell
+    // are grandchildren; treating those exits as terminal exits makes Terax
+    // respawn the terminal after every command.
+    if (task->parent != NULL && task->parent->parent != NULL) return;
+
     pthread_mutex_lock(&g_lock);
     for (struct terax_terminal *terminal = g_terminals; terminal; terminal = terminal->next) {
         if (terminal->pid == task->pid && !terminal->closed) {
