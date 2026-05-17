@@ -215,7 +215,10 @@ function disableIosWebTerminalInput(host: HTMLDivElement, term: Terminal): void 
   const activate = (event: Event) => {
     const hasSelection =
       typeof term.hasSelection === "function" ? term.hasSelection() : false;
-    if (!hasSelection) event.preventDefault();
+    if (!hasSelection) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
     setIosNativeTerminalInputEnabled(true);
     focusIosNativeTerminalInput();
   };
@@ -567,6 +570,11 @@ export function applyTheme(): void {
 
 export function focusSlot(leafId: number): void {
   const slot = slots.find((s) => s.currentLeafId === leafId);
+  if (slot && IS_IOS_RUNTIME) {
+    setIosNativeTerminalInputEnabled(true);
+    focusIosNativeTerminalInput();
+    return;
+  }
   slot?.term.focus();
 }
 
