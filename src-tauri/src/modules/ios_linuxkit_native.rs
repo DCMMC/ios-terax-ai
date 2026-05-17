@@ -23,9 +23,11 @@ const LINUXKIT_ENV: &[&str] = &[
 
 type OutputCallback = extern "C" fn(*mut c_void, *const u8, usize);
 type ExitCallback = extern "C" fn(*mut c_void, i32);
+type LogCallback = extern "C" fn(*const c_char, usize);
 
 extern "C" {
     fn terax_linuxkit_boot(root_path: *const c_char) -> c_int;
+    fn terax_linuxkit_set_log_callback(callback: LogCallback);
     fn terax_linuxkit_import_root_tar(
         archive_path: *const c_char,
         root_path: *const c_char,
@@ -331,7 +333,10 @@ fn boot() -> Result<(), String> {
     BOOT.get_or_init(|| {
         let root = linuxkit_root_dir()?;
         let root = CString::new(root.to_string_lossy().as_bytes()).map_err(|e| e.to_string())?;
-        let status = unsafe { terax_linuxkit_boot(root.as_ptr()) };
+        let status = unsafe {
+            terax_linuxkit_set_log_callback(on_native_log);
+            terax_linuxkit_boot(root.as_ptr())
+        };
         if status == 0 {
             Ok(())
         } else {
@@ -339,6 +344,18 @@ fn boot() -> Result<(), String> {
         }
     })
     .clone()
+}
+
+extern "C" fn on_native_log(data: *const c_char, len: usize) {
+    if data.is_null() || len == 0 {
+        return;
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(data.cast::<u8>(), len) };
+    let message = String::from_utf8_lossy(bytes);
+    let message = message.trim_end_matches(['\r', '\n']);
+    if !message.is_empty() {
+        log::info!("[ios-terminal/native] {message}");
+    }
 }
 
 extern "C" fn on_native_output(user: *mut c_void, data: *const u8, len: usize) {

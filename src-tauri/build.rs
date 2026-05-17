@@ -59,8 +59,12 @@ fn build_ios_linuxkit_bridge(target: &str) {
         .file(linuxkit_dir.join("tools/fakefs.c"))
         .file(linuxkit_dir.join("util/fchdir.c"))
         .include(&linuxkit_dir)
+        .include(linuxkit_dir.join("vdso/arm64"))
         .include(linuxkit_dir.join("app"))
         .include(linuxkit_dir.join("deps/libarchive/libarchive"))
+        .define("LOG_HANDLER_NSLOG", "1")
+        .define("ENGINE_ASBESTOS", "1")
+        .define("GUEST_ARM64", "1")
         .flag("-fblocks")
         .compile("terax_ios_linuxkit_bridge");
 

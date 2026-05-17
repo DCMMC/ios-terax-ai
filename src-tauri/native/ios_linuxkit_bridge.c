@@ -45,6 +45,7 @@ struct terax_terminal {
     terax_output_cb output;
     terax_exit_cb exit;
     void *user;
+    struct task *task;
     int pid;
     bool closed;
     struct terax_terminal *next;
@@ -170,15 +171,26 @@ static const struct tty_driver_ops g_ios_pty_ops = {
 
 static void terax_handle_exit(struct task *task, int code) {
     if (!task) return;
+    char log_line[160];
+    int parent_pid = task->parent ? task->parent->pid : 0;
+    int grandparent_pid = task->parent && task->parent->parent ? task->parent->parent->pid : 0;
+    snprintf(log_line, sizeof(log_line),
+             "ios-linuxkit exit task pid=%d comm=%s parent=%d grandparent=%d code=%d\n",
+             task->pid, task->comm, parent_pid, grandparent_pid, code);
+    terax_log(log_line);
+
     // Match ios-linuxkit's AppDelegate.m: only init and direct children of init
     // represent top-level sessions. Foreground commands spawned by the shell
     // are grandchildren; treating those exits as terminal exits makes Terax
     // respawn the terminal after every command.
-    if (task->parent != NULL && task->parent->parent != NULL) return;
+    if (task->parent != NULL && task->parent->parent != NULL) {
+        terax_log("ios-linuxkit exit ignored: child process\n");
+        return;
+    }
 
     pthread_mutex_lock(&g_lock);
     for (struct terax_terminal *terminal = g_terminals; terminal; terminal = terminal->next) {
-        if (terminal->pid == task->pid && !terminal->closed) {
+        if (terminal->task == task && !terminal->closed) {
             terminal->closed = true;
             terax_exit_cb exit = terminal->exit;
             void *user = terminal->user;
@@ -306,7 +318,13 @@ int32_t terax_linuxkit_start_session(
     free(packed_envp);
     if (err < 0) return err;
 
+    terminal->task = current;
     terminal->pid = current->pid;
+    char log_line[160];
+    snprintf(log_line, sizeof(log_line),
+             "ios-linuxkit session task pid=%d comm=%s tty=%d\n",
+             terminal->pid, current->comm, tty->num);
+    terax_log(log_line);
     *terminal_out = terminal;
     *pid_out = terminal->pid;
     task_start(current);
