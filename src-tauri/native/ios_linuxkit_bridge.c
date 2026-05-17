@@ -160,10 +160,6 @@ static void terax_tty_cleanup(struct tty *tty) {
     tty->data = NULL;
     terminal->tty = NULL;
     unregister_terminal(terminal);
-    if (!terminal->closed && terminal->exit) {
-        terminal->closed = true;
-        terminal->exit(terminal->user, 0);
-    }
 }
 
 static const struct tty_driver_ops g_ios_pty_ops = {
