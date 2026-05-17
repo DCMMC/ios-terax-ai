@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(not(all(mobile, target_os = "ios", terax_ios_linuxkit_native)))]
 use flate2::read::GzDecoder;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use grep_matcher::Matcher;
@@ -22,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::{Channel, Response};
 
 #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
-use crate::modules::ios_linuxkit_native::NativePtySession;
+use crate::modules::ios_linuxkit_native::{import_root_tar, NativePtySession};
 
 const MAX_READ_BYTES: u64 = 10 * 1024 * 1024;
 const BINARY_SNIFF_BYTES: usize = 8 * 1024;
@@ -1599,8 +1600,7 @@ fn init_linuxkit_root_dir() -> Result<PathBuf, String> {
         .join("Terax")
         .join("ios-linuxkit-root");
     let marker = target.join(ROOT_READY_MARKER);
-    if marker.exists() {
-        rewrite_absolute_symlinks(&target)?;
+    if marker.exists() && is_prepared_linuxkit_root(&target) {
         return Ok(target);
     }
 
@@ -1608,16 +1608,41 @@ fn init_linuxkit_root_dir() -> Result<PathBuf, String> {
     if target.exists() {
         fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
     }
-    fs::create_dir_all(&target).map_err(|e| e.to_string())?;
-    let file = fs::File::open(&tar_path).map_err(|e| e.to_string())?;
-    let decoder = GzDecoder::new(file);
-    let mut archive = tar::Archive::new(decoder);
-    archive.unpack(&target).map_err(|e| e.to_string())?;
-    rewrite_absolute_symlinks(&target)?;
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    import_linuxkit_root_tar(&tar_path, &target)?;
     fs::write(&marker, b"ready").map_err(|e| e.to_string())?;
     Ok(target)
 }
 
+fn is_prepared_linuxkit_root(root: &Path) -> bool {
+    #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+    {
+        root.join("meta.db").is_file() && root.join("data/bin/ash").is_file()
+    }
+    #[cfg(not(all(mobile, target_os = "ios", terax_ios_linuxkit_native)))]
+    {
+        root.join("bin/ash").is_file()
+    }
+}
+
+#[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+fn import_linuxkit_root_tar(tar_path: &Path, target: &Path) -> Result<(), String> {
+    import_root_tar(&to_canon(tar_path), &to_canon(target))
+}
+
+#[cfg(not(all(mobile, target_os = "ios", terax_ios_linuxkit_native)))]
+fn import_linuxkit_root_tar(tar_path: &Path, target: &Path) -> Result<(), String> {
+    fs::create_dir_all(target).map_err(|e| e.to_string())?;
+    let file = fs::File::open(tar_path).map_err(|e| e.to_string())?;
+    let decoder = GzDecoder::new(file);
+    let mut archive = tar::Archive::new(decoder);
+    archive.unpack(target).map_err(|e| e.to_string())?;
+    rewrite_absolute_symlinks(target)
+}
+
+#[cfg(not(all(mobile, target_os = "ios", terax_ios_linuxkit_native)))]
 fn rewrite_absolute_symlinks(root: &Path) -> Result<(), String> {
     fn visit(root: &Path, dir: &Path) -> Result<(), String> {
         for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
@@ -1679,6 +1704,8 @@ fn real_path(path: &str) -> Result<PathBuf, String> {
 
 fn real_path_for_virtual(path: &Path) -> Result<PathBuf, String> {
     let root = linuxkit_root_dir()?;
+    #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+    let root = root.join("data");
     let virtual_path = normalize_virtual_path(&to_canon(path));
     let rel = to_canon(&virtual_path);
     let rel = rel.trim_start_matches('/');
@@ -1713,6 +1740,8 @@ fn normalize_virtual_path(raw: &str) -> PathBuf {
 
 fn virtual_path_for_real(real: &Path) -> Result<String, String> {
     let root = linuxkit_root_dir()?;
+    #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+    let root = root.join("data");
     let rel = real.strip_prefix(&root).map_err(|_| {
         format!(
             "path escaped embedded ios-linuxkit root: {}",

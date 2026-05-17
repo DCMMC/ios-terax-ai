@@ -34,12 +34,19 @@ fn build_ios_linuxkit_bridge(target: &str) {
     let build_dir = linuxkit_dir.join("build").join(platform_dir);
     let meson_dir = build_dir.join("meson");
     let deps_dir = meson_dir.join("deps");
+    let libarchive_dir = if target.contains("sim") {
+        linuxkit_dir.join("deps/build/Release")
+    } else {
+        linuxkit_dir.join("deps/build/Release-iphoneos")
+    };
 
     println!("cargo:rerun-if-changed=native/ios_linuxkit_bridge.c");
     println!("cargo:rerun-if-changed={}", build_dir.display());
 
     cc::Build::new()
         .file("native/ios_linuxkit_bridge.c")
+        .file(linuxkit_dir.join("util/fchdir.c"))
+        .include(&linuxkit_dir)
         .include(linuxkit_dir.join("app"))
         .flag("-fblocks")
         .compile("terax_ios_linuxkit_bridge");
@@ -64,8 +71,15 @@ fn build_ios_linuxkit_bridge(target: &str) {
     println!("cargo:rustc-link-search=native={}", build_dir.display());
     println!("cargo:rustc-link-search=native={}", meson_dir.display());
     println!("cargo:rustc-link-search=native={}", deps_dir.display());
+    println!(
+        "cargo:rustc-link-search=native={}",
+        libarchive_dir.display()
+    );
 
     println!("cargo:rustc-link-lib=sqlite3");
+    println!("cargo:rustc-link-lib=z");
+    println!("cargo:rustc-link-lib=iconv");
+    println!("cargo:rustc-link-lib=static=archive");
     println!("cargo:rustc-link-lib=static=iSHApp");
     println!("cargo:rustc-link-lib=static:+whole-archive=iSHLinux");
     println!("cargo:rustc-link-lib=static:+whole-archive=linux");

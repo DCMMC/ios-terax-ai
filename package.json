@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "bunx vite",
     "build": "bunx tsc && bunx vite build",
+    "patch:ios-project": "bun scripts/patch-ios-project.mjs",
     "preview": "bunx vite preview",
     "tauri": "bunx tauri",
     "ios:init": "bunx tauri ios init",

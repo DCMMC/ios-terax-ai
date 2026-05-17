@@ -1,6 +1,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -9,6 +10,25 @@
 typedef void (*terax_output_cb)(void *user, const uint8_t *data, uintptr_t len);
 typedef void (*terax_exit_cb)(void *user, int32_t code);
 typedef void (*terax_log_cb)(const char *data, uintptr_t len);
+
+struct fakefsify_error {
+    int line;
+    enum {
+        ERR_ARCHIVE,
+        ERR_SQLITE,
+        ERR_POSIX,
+        ERR_CANCELLED,
+    } type;
+    int code;
+    char *message;
+};
+
+struct progress {
+    void *cookie;
+    void (*callback)(void *cookie, double progress, const char *message, bool *cancel_out);
+};
+
+extern bool fakefs_import(const char *archive_path, const char *fs, struct fakefsify_error *err_out, struct progress progress);
 
 struct terax_terminal {
     struct linux_tty *tty;
@@ -44,6 +64,20 @@ void terax_linuxkit_set_log_callback(terax_log_cb cb) {
     pthread_mutex_lock(&g_lock);
     g_log = cb;
     pthread_mutex_unlock(&g_lock);
+}
+
+int32_t terax_linuxkit_import_root_tar(const char *archive_path, const char *root_path, char *error_out, uintptr_t error_len) {
+    if (!archive_path || !root_path) return -22;
+    struct fakefsify_error err = {0};
+    bool ok = fakefs_import(archive_path, root_path, &err, (struct progress){0});
+    if (ok) return 0;
+
+    if (error_out && error_len > 0) {
+        const char *message = err.message ? err.message : "fakefs import failed";
+        snprintf(error_out, (size_t)error_len, "%s (type=%d code=%d line=%d)", message, err.type, err.code, err.line);
+    }
+    free(err.message);
+    return err.code > 0 ? -err.code : -1;
 }
 
 int32_t terax_linuxkit_boot(const char *root_path) {

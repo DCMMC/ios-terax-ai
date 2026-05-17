@@ -26,6 +26,12 @@ type ExitCallback = extern "C" fn(*mut c_void, i32);
 
 extern "C" {
     fn terax_linuxkit_boot(root_path: *const c_char) -> c_int;
+    fn terax_linuxkit_import_root_tar(
+        archive_path: *const c_char,
+        root_path: *const c_char,
+        error_out: *mut c_char,
+        error_len: usize,
+    ) -> c_int;
     fn terax_linuxkit_start_session(
         exe: *const c_char,
         argv: *const *const c_char,
@@ -74,6 +80,37 @@ struct NativeCommandState {
 }
 
 unsafe impl Send for NativePtySession {}
+
+pub fn import_root_tar(archive_path: &str, root_path: &str) -> Result<(), String> {
+    let archive_path = CString::new(archive_path).map_err(|e| e.to_string())?;
+    let root_path = CString::new(root_path).map_err(|e| e.to_string())?;
+    let mut error = vec![0 as c_char; 1024];
+    let status = unsafe {
+        terax_linuxkit_import_root_tar(
+            archive_path.as_ptr(),
+            root_path.as_ptr(),
+            error.as_mut_ptr(),
+            error.len(),
+        )
+    };
+    if status == 0 {
+        return Ok(());
+    }
+    let end = error
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(error.len());
+    let message = if end == 0 {
+        "fakefs import failed".to_string()
+    } else {
+        let bytes = error[..end]
+            .iter()
+            .map(|byte| *byte as u8)
+            .collect::<Vec<_>>();
+        String::from_utf8_lossy(&bytes).to_string()
+    };
+    Err(format!("ios-linuxkit root import failed: {message}"))
+}
 
 impl NativePtySession {
     pub fn open(
@@ -205,8 +242,10 @@ impl NativePtySession {
                 break;
             }
             let wait = deadline.saturating_duration_since(now);
-            let (next_state, wait_result) =
-                unsafe { &*context }.ready.wait_timeout(state, wait).unwrap();
+            let (next_state, wait_result) = unsafe { &*context }
+                .ready
+                .wait_timeout(state, wait)
+                .unwrap();
             state = next_state;
             if wait_result.timed_out() {
                 timed_out = true;
