@@ -198,19 +198,6 @@ html[data-chrome="borderless"] #settings-root {
   outline: none !important;
 }
 
-.terax-terminal-host,
-.terax-terminal-host * {
-  -webkit-touch-callout: none !important;
-  -webkit-user-select: none !important;
-  user-select: none !important;
-}
-
-.terax-terminal-host input,
-.terax-terminal-host textarea {
-  -webkit-user-select: text !important;
-  user-select: text !important;
-}
-
 .cm-editor,
 .cm-scroller {
   scrollbar-width: none !important;

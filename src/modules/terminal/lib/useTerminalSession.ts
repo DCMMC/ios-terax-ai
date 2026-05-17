@@ -3,8 +3,8 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { TerminalSearchAddon } from "./terminalSurface";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { DormantRing } from "./dormantRing";
+import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
-import { TerminalOscStream } from "./oscStream";
 import {
   acquireSlot,
   applyFontSize,
@@ -42,7 +42,6 @@ type Session = {
   snapshot: string | null;
   searchQuery: string | null;
   dormantRing: DormantRing;
-  oscStream: TerminalOscStream;
   hasSlot: boolean;
 };
 
@@ -96,7 +95,6 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     snapshot: null,
     searchQuery: null,
     dormantRing: new DormantRing(),
-    oscStream: new TerminalOscStream(),
     hasSlot: false,
   };
   sessions.set(leafId, session);
@@ -109,37 +107,12 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   return session;
 }
 
-function emitCwd(s: Session, next: string): void {
-  if (s.lastCwd === next) return;
-  s.lastCwd = next;
-  s.callbacks.onCwd?.(next);
-}
-
 function deliverPtyBytes(leafId: number, bytes: Uint8Array): void {
   const s = sessions.get(leafId);
   if (!s) return;
-  for (const cwd of s.oscStream.feed(bytes)) emitCwd(s, cwd);
   const slot = getSlotForLeaf(leafId);
   if (slot) slot.term.write(bytes);
   else s.dormantRing.push(bytes);
-}
-
-function deliverSystemText(s: Session, leafId: number, text: string): void {
-  const bytes = new TextEncoder().encode(text);
-  const slot = getSlotForLeaf(leafId);
-  if (slot) slot.term.write(bytes);
-  else s.dormantRing.push(bytes);
-}
-
-function markOpenFailed(s: Session, leafId: number, e: unknown): void {
-  s.shellExited = true;
-  const slot = getSlotForLeaf(leafId);
-  if (slot) slot.term.options.disableStdin = true;
-  deliverSystemText(
-    s,
-    leafId,
-    `\r\n\x1b[31mFailed to start iOS LinuxKit shell: ${String(e)}\x1b[0m\r\n`,
-  );
 }
 
 async function openPtyForSession(
@@ -181,6 +154,15 @@ function bindLeafToSlot(leafId: number, s: Session): void {
     onScopeChange: (cols, rows) => {
       s.cols = cols;
       s.rows = rows;
+    },
+    registerOsc: (term) => {
+      const prompt = registerPromptTracker(term);
+      const cwd = registerCwdHandler(term, (next) => {
+        if (s.lastCwd === next) return;
+        s.lastCwd = next;
+        s.callbacks.onCwd?.(next);
+      });
+      return [prompt.dispose, cwd];
     },
     onSearchReady: (addon) => s.callbacks.onSearchReady?.(addon),
   });
@@ -231,7 +213,6 @@ function attachSession(
       })
       .catch((e) => {
         s.ptyOpening = false;
-        markOpenFailed(s, leafId, e);
         console.error("[terax] openPty failed:", e);
       });
   }
@@ -271,7 +252,6 @@ export async function respawnSession(
     pty = await openPtyForSession(leafId, s, cwd ?? s.initialCwd);
   } catch (e) {
     s.ptyOpening = false;
-    markOpenFailed(s, leafId, e);
     console.error("[terax] respawn openPty failed:", e);
     return;
   }
