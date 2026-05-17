@@ -1,5 +1,7 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
+import { IS_IOS_RUNTIME } from "@/lib/platform";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { invoke } from "@tauri-apps/api/core";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import {
   createSearchAdapter,
@@ -47,9 +49,12 @@ export type Slot = {
 const slots: Slot[] = [];
 let recyclerEl: HTMLDivElement | null = null;
 let adapter: SlotAdapter | null = null;
+let nativeInputListenerInstalled = false;
+let nativeInputEnabled = false;
 
 export function configureRendererPool(a: SlotAdapter): void {
   adapter = a;
+  installIosNativeInputBridge();
 }
 
 export function forEachSlot(fn: (slot: Slot) => void): void {
@@ -96,6 +101,7 @@ function createSlot(): Slot {
   host.setAttribute("data-terax-slot", String(slots.length));
   getRecycler().appendChild(host);
   term.open(host);
+  disableIosWebTerminalInput(host, term);
 
   const slot: Slot = {
     id: slots.length,
@@ -143,6 +149,127 @@ function createSlot(): Slot {
 
   slots.push(slot);
   return slot;
+}
+
+function installIosNativeInputBridge(): void {
+  if (
+    !IS_IOS_RUNTIME ||
+    nativeInputListenerInstalled ||
+    typeof window === "undefined"
+  )
+    return;
+  nativeInputListenerInstalled = true;
+  window.addEventListener("terax:native-terminal-input", (event) => {
+    const data = (event as CustomEvent<unknown>).detail;
+    if (typeof data !== "string" || data.length === 0) return;
+    iosDebugLog(`js native input event bytes=${data.length}`);
+    const slot = slots.find(
+      (s) =>
+        s.currentLeafId !== null &&
+        (adapter?.isLeafFocused(s.currentLeafId) ?? false),
+    );
+    if (slot?.currentLeafId === null || slot?.currentLeafId === undefined) {
+      iosDebugLog("js native input dropped: no focused terminal slot");
+      return;
+    }
+    iosDebugLog(`js native input -> pty leaf=${slot.currentLeafId}`);
+    adapter?.resolveLeaf(slot.currentLeafId)?.writeToPty(data);
+  });
+  window.addEventListener("focusin", syncIosNativeInputFromDomFocus, true);
+  window.addEventListener("focusout", () => {
+    window.setTimeout(syncIosNativeInputFromDomFocus, 0);
+  }, true);
+}
+
+function disableIosWebTerminalInput(host: HTMLDivElement, term: Terminal): void {
+  if (!IS_IOS_RUNTIME) return;
+
+  // Match ios-linuxkit's terminal app: iOS owns text entry natively, while
+  // Ghostty remains the renderer and input encoder for non-native events.
+  host.style.setProperty("-webkit-touch-callout", "none");
+  host.style.setProperty("-webkit-tap-highlight-color", "transparent");
+  host.style.setProperty("-webkit-user-select", "none");
+  host.style.userSelect = "none";
+  host.style.touchAction = "manipulation";
+  host.removeAttribute("contenteditable");
+  host.removeAttribute("role");
+  host.removeAttribute("aria-label");
+  host.removeAttribute("aria-multiline");
+  host.setAttribute("tabindex", "-1");
+
+  for (const el of host.querySelectorAll<HTMLElement>("*")) {
+    el.style.setProperty("-webkit-touch-callout", "none");
+    el.style.setProperty("-webkit-user-select", "none");
+    el.style.userSelect = "none";
+  }
+
+  const textarea = term.textarea;
+  if (!textarea) return;
+  textarea.readOnly = true;
+  textarea.setAttribute("tabindex", "-1");
+  textarea.style.pointerEvents = "none";
+  textarea.style.setProperty("-webkit-user-select", "none");
+  textarea.style.userSelect = "none";
+  textarea.blur();
+
+  const activate = (event: Event) => {
+    const hasSelection =
+      typeof term.hasSelection === "function" ? term.hasSelection() : false;
+    if (!hasSelection) event.preventDefault();
+    setIosNativeTerminalInputEnabled(true);
+    focusIosNativeTerminalInput();
+  };
+  host.addEventListener("touchstart", activate, { capture: true });
+  host.addEventListener("touchend", activate, { capture: true });
+  host.addEventListener("mousedown", activate, { capture: true });
+}
+
+export function setIosNativeTerminalInputEnabled(enabled: boolean): void {
+  if (!IS_IOS_RUNTIME || nativeInputEnabled === enabled) return;
+  nativeInputEnabled = enabled;
+  iosDebugLog(`native input enabled=${enabled}`);
+  void invoke("ios_set_terminal_input_enabled", { enabled }).catch((e) => {
+    console.error("[terax] failed to update iOS terminal input focus:", e);
+  });
+}
+
+function focusIosNativeTerminalInput(): void {
+  if (!IS_IOS_RUNTIME) return;
+  iosDebugLog("native input focus requested");
+  void invoke("ios_focus_terminal_input").catch((e) => {
+    console.error("[terax] failed to focus iOS terminal input:", e);
+  });
+}
+
+function iosDebugLog(message: string): void {
+  if (!IS_IOS_RUNTIME) return;
+  void invoke("ios_debug_log", { message }).catch(() => {});
+}
+
+function syncIosNativeInputFromDomFocus(): void {
+  if (!IS_IOS_RUNTIME) return;
+  const active = document.activeElement;
+  if (isEditableElement(active)) {
+    setIosNativeTerminalInputEnabled(false);
+    return;
+  }
+  const hasFocusedTerminal = slots.some(
+    (s) =>
+      s.currentLeafId !== null &&
+      (adapter?.isLeafFocused(s.currentLeafId) ?? false),
+  );
+  setIosNativeTerminalInputEnabled(hasFocusedTerminal);
+}
+
+function isEditableElement(el: Element | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  if (el.closest("[data-terax-slot]")) return false;
+  const tag = el.tagName.toLowerCase();
+  if (tag === "textarea" || tag === "select") return true;
+  if (tag !== "input") return el.isContentEditable;
+  const input = el as HTMLInputElement;
+  return !["button", "checkbox", "color", "file", "radio", "range", "reset", "submit"]
+    .includes(input.type);
 }
 
 type PickResult = { slot: Slot; previousLeafId: number | null };

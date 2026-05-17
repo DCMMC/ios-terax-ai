@@ -18,6 +18,7 @@ import {
   focusSlot,
   getSlotForLeaf,
   releaseSlot,
+  setIosNativeTerminalInputEnabled,
   setSlotFocused,
 } from "./rendererPool";
 
@@ -230,6 +231,16 @@ function detachSession(leafId: number): void {
   s.container = null;
 }
 
+function syncIosNativeInputState(): void {
+  for (const s of sessions.values()) {
+    if (s.visibleNow && s.focusedNow && !s.shellExited) {
+      setIosNativeTerminalInputEnabled(true);
+      return;
+    }
+  }
+  setIosNativeTerminalInputEnabled(false);
+}
+
 export async function respawnSession(
   leafId: number,
   cwd?: string,
@@ -277,6 +288,7 @@ export function disposeSession(leafId: number): void {
   s.pty?.close();
   s.pty = null;
   sessions.delete(leafId);
+  syncIosNativeInputState();
 }
 
 type Options = {
@@ -351,6 +363,7 @@ export function useTerminalSession({
     } else if (s.hasSlot) {
       unbindLeafFromSlot(leafId, s);
     }
+    syncIosNativeInputState();
   }, [leafId, visible, focused]);
 
   const write = useCallback(

@@ -9,6 +9,37 @@ use tauri_plugin_window_state::StateFlags;
 #[cfg(target_os = "ios")]
 extern "C" {
     fn TeraxInstallKeyCommands();
+    fn TeraxFocusTerminalInput();
+    fn TeraxSetTerminalInputEnabled(enabled: bool);
+}
+
+#[cfg(target_os = "ios")]
+#[tauri::command]
+fn ios_focus_terminal_input() {
+    unsafe {
+        TeraxFocusTerminalInput();
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+#[tauri::command]
+fn ios_focus_terminal_input() {}
+
+#[cfg(target_os = "ios")]
+#[tauri::command]
+fn ios_set_terminal_input_enabled(enabled: bool) {
+    unsafe {
+        TeraxSetTerminalInputEnabled(enabled);
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+#[tauri::command]
+fn ios_set_terminal_input_enabled(_enabled: bool) {}
+
+#[tauri::command]
+fn ios_debug_log(message: String) {
+    log::info!("[ios-terminal] {message}");
 }
 
 #[cfg(not(mobile))]
@@ -139,6 +170,9 @@ pub fn run() {
             workspace::wsl_home,
             #[cfg(mobile)]
             modules::linuxkit::linuxkit_health,
+            ios_focus_terminal_input,
+            ios_set_terminal_input_enabled,
+            ios_debug_log,
             #[cfg(not(mobile))]
             open_settings_window,
             secrets::secrets_get,

@@ -110,6 +110,16 @@ BYOK. Multi-provider via `@ai-sdk/*`: **OpenAI, Anthropic, Google, Groq, xAI, Ce
 - Shell init scripts: gate Unix-only logic behind `#[cfg(unix)]`; Windows arm in `pty::shell_init::windows`.
 - Terminal input: send `\r` (CR) for Enter, not `\n` (LF) — PowerShell on Windows requires CR.
 
+### iOS LinuxKit terminal input
+
+The iOS target follows the working terminal app in `../ios-linuxkit/app/terminal/term.js`, `../ios-linuxkit/app/Terminal.m`, and `../ios-linuxkit/app/TerminalView.m`:
+
+- Ghostty remains the renderer and terminal input encoder.
+- iOS native text entry owns software and hardware keyboard input.
+- Ghostty's Web text input surface is disabled on iOS after `term.open(...)`; do not focus or rely on its hidden Web textarea.
+- Native iOS input is bridged into JS as `terax:native-terminal-input`, and the focused terminal forwards that string to the normal `pty_write` command.
+- `src-tauri/native/ios_keycommands.mm` mirrors ios-linuxkit's `insertText:`, `deleteBackward`, arrow, escape, control, and option/meta mappings. Keep new iPad keyboard behavior there instead of adding DOM keyboard hacks in React.
+
 ### Bundle config
 
 - `bundle.targets: "all"` plus per-platform sections in `tauri.conf.json`:

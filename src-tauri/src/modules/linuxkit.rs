@@ -430,9 +430,14 @@ impl LinuxKitBackend {
         {
             let state = state().lock().unwrap();
             if let Some(session) = state.native_pty_sessions.get(&id) {
+                log::info!(
+                    "[ios-terminal] rust pty_write id={id} bytes={}",
+                    data.len()
+                );
                 session.write(data.as_bytes());
                 return Ok(());
             }
+            log::warn!("[ios-terminal] rust pty_write missing native session id={id}");
         }
         let mut close = false;
         let mut on_exit = None;

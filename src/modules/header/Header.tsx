@@ -6,7 +6,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { WindowControls } from "@/components/WindowControls";
-import { IS_MAC, KEY_SEP, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
+import {
+  IS_IOS_RUNTIME,
+  IS_MAC,
+  KEY_SEP,
+  USE_CUSTOM_WINDOW_CONTROLS,
+} from "@/lib/platform";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   getBindingTokens,
@@ -92,6 +97,7 @@ export function Header({
 
   const splitRightTokens = tokensFor("pane.splitRight");
   const splitDownTokens = tokensFor("pane.splitDown");
+  const useAppleOrdering = IS_MAC || IS_IOS_RUNTIME;
 
   useEffect(() => {
     const el = rootRef.current;
@@ -133,7 +139,7 @@ export function Header({
       ref={rootRef}
       data-tauri-drag-region
       className={`flex h-10 shrink-0 items-center gap-2 border-b border-border/60 bg-card select-none ${
-        IS_MAC ? "pr-2 pl-20" : "pr-0 pl-2"
+        useAppleOrdering ? "pr-2 pl-20" : "pr-0 pl-2"
       }`}
     >
       <div className="flex shrink-0 items-center gap-0.5">
@@ -189,12 +195,12 @@ export function Header({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {!IS_MAC && shortcutsButton}
+        {!useAppleOrdering && shortcutsButton}
       </div>
 
-      {!IS_MAC && <span className="mx-1 h-5 w-px shrink-0 bg-border" />}
+      {!useAppleOrdering && <span className="mx-1 h-5 w-px shrink-0 bg-border" />}
 
-      {IS_MAC && <span className="mr-1 h-full w-px shrink-0 bg-border" />}
+      {useAppleOrdering && <span className="mr-1 h-full w-px shrink-0 bg-border" />}
 
       <div
         className="flex min-w-0 flex-1 items-center gap-2"
@@ -217,14 +223,14 @@ export function Header({
 
       <SearchInline ref={searchRef} target={searchTarget} compact={compact} />
 
-      {IS_MAC && (
+      {useAppleOrdering && (
         <>
           {shortcutsButton}
           {settingsButton}
         </>
       )}
 
-      {!IS_MAC && settingsButton}
+      {!useAppleOrdering && settingsButton}
 
       {USE_CUSTOM_WINDOW_CONTROLS && (
         <>
