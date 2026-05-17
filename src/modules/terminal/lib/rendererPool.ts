@@ -32,7 +32,6 @@ export type Slot = {
   readonly searchAddon: TerminalSearchAddon;
   readonly host: HTMLDivElement;
   currentLeafId: number | null;
-  oscDisposers: (() => void)[];
   observer: ResizeObserver | null;
   fitTimer: ReturnType<typeof setTimeout> | null;
   ptyTimer: ReturnType<typeof setTimeout> | null;
@@ -104,7 +103,6 @@ function createSlot(): Slot {
     searchAddon,
     host,
     currentLeafId: null,
-    oscDisposers: [],
     observer: null,
     fitTimer: null,
     ptyTimer: null,
@@ -189,7 +187,6 @@ export type AcquireParams = {
   cols: number;
   rows: number;
   onScopeChange: (cols: number, rows: number) => void;
-  registerOsc: (term: Terminal) => (() => void)[];
   onSearchReady: (addon: TerminalSearchAddon) => void;
 };
 
@@ -248,13 +245,6 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   try {
     slot.term.write("\x1b[?25h");
   } catch {}
-
-  for (const d of slot.oscDisposers) {
-    try {
-      d();
-    } catch {}
-  }
-  slot.oscDisposers = p.registerOsc(slot.term);
 
   setupResizeObserver(slot, p);
   slot.fitAddon.fit();
@@ -381,13 +371,6 @@ function serializeSlot(slot: Slot): SerializeOutput {
 }
 
 function detachSlotFromLeaf(slot: Slot): void {
-  for (const d of slot.oscDisposers) {
-    try {
-      d();
-    } catch {}
-  }
-  slot.oscDisposers = [];
-
   slot.observer?.disconnect();
   slot.observer = null;
   if (slot.fitTimer) clearTimeout(slot.fitTimer);

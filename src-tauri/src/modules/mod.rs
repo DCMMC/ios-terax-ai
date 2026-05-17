@@ -153,6 +153,7 @@ pub mod shell {
         command: String,
         cwd: Option<String>,
         timeout_secs: Option<u64>,
+        _workspace: Option<WorkspaceEnv>,
     ) -> Result<SessionRunOutput, String> {
         let response = LinuxKitBackend::new().request(LinuxKitRequest::ShellSessionRun(
             ShellSessionRunRequest {

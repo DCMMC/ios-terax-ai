@@ -32,6 +32,7 @@ const LINUXKIT_SHELL: &str = "/bin/ash";
 const LINUXKIT_SHELL_ARG0: &str = "-ash";
 const LINUXKIT_HOME: &str = "/root";
 const LINUXKIT_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+const OSC_ST: &str = "\x1b\\";
 const PRUNE_DIRS: &[&str] = &[
     "node_modules",
     ".git",
@@ -370,12 +371,13 @@ impl LinuxKitBackend {
         let cwd = cwd
             .map(|path| normalize_virtual_path(&path))
             .unwrap_or_else(default_cwd);
-        let initial_prompt = prompt(&cwd);
+        let initial_prompt = prompt(&cwd, 0);
         state.pty_sessions.insert(
             id,
             PtySession {
                 cwd,
                 input: String::new(),
+                input_state: InputState::Normal,
                 cols,
                 rows,
                 on_data: on_data.clone(),
@@ -387,8 +389,7 @@ impl LinuxKitBackend {
         send_pty(
             &on_data,
             format!(
-                "\x1b[2mStarting iOS LinuxKit {LINUXKIT_SHELL} -l ({cols}x{rows})\x1b[0m\r\n{}",
-                initial_prompt
+                "\x1b[2mStarting iOS LinuxKit {LINUXKIT_SHELL} -l ({cols}x{rows})\x1b[0m\r\n{initial_prompt}",
             )
             .as_bytes(),
         )?;
@@ -405,6 +406,9 @@ impl LinuxKitBackend {
                 .get_mut(&id)
                 .ok_or_else(|| "no session".to_string())?;
             for ch in data.chars() {
+                if handle_input_escape(session, ch) {
+                    continue;
+                }
                 match ch {
                     '\r' | '\n' => {
                         send_pty(&session.on_data, b"\r\n")?;
@@ -415,6 +419,7 @@ impl LinuxKitBackend {
                             on_exit = Some(session.on_exit.clone());
                             break;
                         }
+                        send_pty(&session.on_data, format!("\x1b]133;C{OSC_ST}").as_bytes())?;
                         let output = run_virtual_command(&command, &mut session.cwd);
                         if !output.stdout.is_empty() {
                             send_pty(&session.on_data, output.stdout.as_bytes())?;
@@ -422,14 +427,28 @@ impl LinuxKitBackend {
                         if !output.stderr.is_empty() {
                             send_pty(&session.on_data, output.stderr.as_bytes())?;
                         }
-                        let prompt = prompt(&session.cwd);
+                        let prompt = prompt(&session.cwd, output.exit_code);
                         send_pty(&session.on_data, prompt.as_bytes())?;
                     }
                     '\u{3}' => {
                         session.input.clear();
                         send_pty(&session.on_data, b"^C\r\n")?;
-                        let prompt = prompt(&session.cwd);
+                        let prompt = prompt(&session.cwd, 130);
                         send_pty(&session.on_data, prompt.as_bytes())?;
+                    }
+                    '\u{c}' => {
+                        send_pty(&session.on_data, b"\x1b[2J\x1b[H")?;
+                        let prompt = prompt(&session.cwd, 0);
+                        send_pty(&session.on_data, prompt.as_bytes())?;
+                    }
+                    '\u{15}' => {
+                        let removed = session.input.chars().count();
+                        session.input.clear();
+                        send_backspaces(&session.on_data, removed)?;
+                    }
+                    '\u{17}' => {
+                        let removed = erase_word(&mut session.input);
+                        send_backspaces(&session.on_data, removed)?;
                     }
                     '\u{8}' | '\u{7f}' => {
                         if session.input.pop().is_some() {
@@ -498,10 +517,18 @@ impl Default for AdapterState {
 struct PtySession {
     cwd: PathBuf,
     input: String,
+    input_state: InputState,
     cols: u16,
     rows: u16,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
+}
+
+#[derive(Clone, Copy)]
+enum InputState {
+    Normal,
+    Esc,
+    Csi,
 }
 
 struct BackgroundProc {
@@ -1342,6 +1369,56 @@ fn shell_env_value(name: &str, cwd: &Path) -> Option<String> {
     }
 }
 
+fn handle_input_escape(session: &mut PtySession, ch: char) -> bool {
+    match session.input_state {
+        InputState::Normal => {
+            if ch == '\x1b' {
+                session.input_state = InputState::Esc;
+                true
+            } else {
+                false
+            }
+        }
+        InputState::Esc => {
+            if ch == '[' {
+                session.input_state = InputState::Csi;
+                true
+            } else {
+                session.input_state = InputState::Normal;
+                false
+            }
+        }
+        InputState::Csi => {
+            if ('\u{40}'..='\u{7e}').contains(&ch) {
+                session.input_state = InputState::Normal;
+            }
+            true
+        }
+    }
+}
+
+fn erase_word(input: &mut String) -> usize {
+    let before = input.chars().count();
+    while input.chars().last().is_some_and(|ch| ch.is_whitespace()) {
+        input.pop();
+    }
+    while input.chars().last().is_some_and(|ch| !ch.is_whitespace()) {
+        input.pop();
+    }
+    before.saturating_sub(input.chars().count())
+}
+
+fn send_backspaces(channel: &Channel<Response>, count: usize) -> Result<(), String> {
+    if count == 0 {
+        return Ok(());
+    }
+    let mut bytes = Vec::with_capacity(count * 3);
+    for _ in 0..count {
+        bytes.extend_from_slice(b"\x08 \x08");
+    }
+    send_pty(channel, &bytes)
+}
+
 fn ensure_linuxkit_ash() -> Result<PathBuf, String> {
     let ash = real_path_for_virtual(&PathBuf::from(LINUXKIT_SHELL))?;
     if ash.exists() {
@@ -1353,14 +1430,38 @@ fn ensure_linuxkit_ash() -> Result<PathBuf, String> {
     }
 }
 
-fn prompt(cwd: &Path) -> String {
+fn prompt(cwd: &Path, status: i32) -> String {
     format!(
-        "\x1b]7;file://localhost{}\x07root@ios-linuxkit:{}# ",
-        to_canon(cwd),
+        "\x1b]133;D;{status}{OSC_ST}\x1b]7;file://localhost{}{OSC_ST}\x1b]133;A{OSC_ST}root@ios-linuxkit:{}# \x1b]133;B{OSC_ST}",
+        encode_file_uri_path(&to_canon(cwd)),
         cwd.file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("/")
     )
+}
+
+fn encode_file_uri_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for byte in path.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'.' | b'_' | b'~' | b'-' => {
+                out.push(byte as char);
+            }
+            _ => {
+                out.push('%');
+                out.push(hex(byte >> 4));
+                out.push(hex(byte & 0x0f));
+            }
+        }
+    }
+    out
+}
+
+fn hex(n: u8) -> char {
+    match n {
+        0..=9 => (b'0' + n) as char,
+        _ => (b'A' + (n - 10)) as char,
+    }
 }
 
 fn send_pty(channel: &Channel<Response>, bytes: &[u8]) -> Result<(), String> {
@@ -1393,6 +1494,7 @@ fn init_linuxkit_root_dir() -> Result<PathBuf, String> {
         .join("ios-linuxkit-root");
     let marker = target.join(ROOT_READY_MARKER);
     if marker.exists() {
+        rewrite_absolute_symlinks(&target)?;
         return Ok(target);
     }
 
@@ -1405,8 +1507,33 @@ fn init_linuxkit_root_dir() -> Result<PathBuf, String> {
     let decoder = GzDecoder::new(file);
     let mut archive = tar::Archive::new(decoder);
     archive.unpack(&target).map_err(|e| e.to_string())?;
+    rewrite_absolute_symlinks(&target)?;
     fs::write(&marker, b"ready").map_err(|e| e.to_string())?;
     Ok(target)
+}
+
+fn rewrite_absolute_symlinks(root: &Path) -> Result<(), String> {
+    fn visit(root: &Path, dir: &Path) -> Result<(), String> {
+        for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            let meta = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+            if meta.file_type().is_symlink() {
+                let target = fs::read_link(&path).map_err(|e| e.to_string())?;
+                if target.is_absolute() {
+                    let embedded_target = root.join(target.strip_prefix("/").unwrap_or(&target));
+                    fs::remove_file(&path).map_err(|e| e.to_string())?;
+                    std::os::unix::fs::symlink(&embedded_target, &path)
+                        .map_err(|e| e.to_string())?;
+                }
+            } else if meta.is_dir() {
+                visit(root, &path)?;
+            }
+        }
+        Ok(())
+    }
+
+    visit(root, root)
 }
 
 fn locate_root_tar() -> Result<PathBuf, String> {
@@ -1539,12 +1666,16 @@ fn to_canon(path: impl AsRef<Path>) -> String {
 
 #[tauri::command]
 pub fn linuxkit_health() -> LinuxKitHealth {
-    LinuxKitHealth {
-        available: true,
-        version: Some("ios-linuxkit-adapter".into()),
-        message: Some(
-            "mobile command adapter active; native rcarmo/ios-linuxkit transport can attach here"
-                .into(),
-        ),
+    match ensure_linuxkit_ash() {
+        Ok(_) => LinuxKitHealth {
+            available: true,
+            version: Some("ios-linuxkit-adapter".into()),
+            message: Some("embedded ios-linuxkit ash is ready".into()),
+        },
+        Err(e) => LinuxKitHealth {
+            available: false,
+            version: Some("ios-linuxkit-adapter".into()),
+            message: Some(e),
+        },
     }
 }
