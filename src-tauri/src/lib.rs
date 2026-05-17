@@ -6,6 +6,11 @@ use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 #[cfg(not(mobile))]
 use tauri_plugin_window_state::StateFlags;
 
+#[cfg(target_os = "ios")]
+extern "C" {
+    fn TeraxInstallKeyCommands();
+}
+
 #[cfg(not(mobile))]
 #[tauri::command]
 async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Result<(), String> {
@@ -64,6 +69,11 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "ios")]
+    unsafe {
+        TeraxInstallKeyCommands();
+    }
+
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_os::init())

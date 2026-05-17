@@ -21,6 +21,9 @@ use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
 use tauri::ipc::{Channel, Response};
 
+#[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+use crate::modules::ios_linuxkit_native::NativePtySession;
+
 const MAX_READ_BYTES: u64 = 10 * 1024 * 1024;
 const BINARY_SNIFF_BYTES: usize = 8 * 1024;
 const FILE_SIZE_CAP: u64 = 5 * 1024 * 1024;
@@ -368,6 +371,16 @@ impl LinuxKitBackend {
         let mut state = state().lock().unwrap();
         let id = state.next_pty_id;
         state.next_pty_id += 1;
+        #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+        match NativePtySession::open(cols, rows, on_data.clone(), on_exit.clone()) {
+            Ok(session) => {
+                state.native_pty_sessions.insert(id, session);
+                return Ok(id);
+            }
+            Err(err) => {
+                log::warn!("native ios-linuxkit PTY failed, using adapter fallback: {err}");
+            }
+        }
         let cwd = cwd
             .map(|path| normalize_virtual_path(&path))
             .unwrap_or_else(default_cwd);
@@ -397,6 +410,14 @@ impl LinuxKitBackend {
     }
 
     pub fn pty_write(&self, id: u32, data: String) -> Result<(), String> {
+        #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+        {
+            let state = state().lock().unwrap();
+            if let Some(session) = state.native_pty_sessions.get(&id) {
+                session.write(data.as_bytes());
+                return Ok(());
+            }
+        }
         let mut close = false;
         let mut on_exit = None;
         {
@@ -475,6 +496,11 @@ impl LinuxKitBackend {
 
     pub fn pty_resize(&self, id: u32, cols: u16, rows: u16) -> Result<(), String> {
         let mut state = state().lock().unwrap();
+        #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+        if let Some(session) = state.native_pty_sessions.get(&id) {
+            session.resize(cols, rows);
+            return Ok(());
+        }
         let session = state
             .pty_sessions
             .get_mut(&id)
@@ -485,6 +511,11 @@ impl LinuxKitBackend {
     }
 
     pub fn pty_close(&self, id: u32) -> Result<(), String> {
+        #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+        if let Some(mut session) = state().lock().unwrap().native_pty_sessions.remove(&id) {
+            session.close();
+            return Ok(());
+        }
         if let Some(session) = state().lock().unwrap().pty_sessions.remove(&id) {
             let _ = session.on_exit.send(0);
         }
@@ -496,6 +527,8 @@ struct AdapterState {
     next_pty_id: u32,
     next_shell_id: u32,
     next_bg_id: u32,
+    #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+    native_pty_sessions: HashMap<u32, NativePtySession>,
     pty_sessions: HashMap<u32, PtySession>,
     shell_sessions: HashMap<u32, PathBuf>,
     bg: HashMap<u32, BackgroundProc>,
@@ -507,6 +540,8 @@ impl Default for AdapterState {
             next_pty_id: 1,
             next_shell_id: 1,
             next_bg_id: 1,
+            #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+            native_pty_sessions: HashMap::new(),
             pty_sessions: HashMap::new(),
             shell_sessions: HashMap::new(),
             bg: HashMap::new(),
@@ -1474,7 +1509,7 @@ fn default_cwd() -> PathBuf {
     PathBuf::from("/root")
 }
 
-fn linuxkit_root_dir() -> Result<PathBuf, String> {
+pub(crate) fn linuxkit_root_dir() -> Result<PathBuf, String> {
     static ROOT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
     ROOT.get_or_init(init_linuxkit_root_dir).clone()
 }

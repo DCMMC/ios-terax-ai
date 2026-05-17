@@ -682,7 +682,9 @@ export default function App() {
     ],
   );
 
-  useGlobalShortcuts(shortcutHandlers);
+  useGlobalShortcuts(shortcutHandlers, {
+    isDisabled: (id) => settingsOverlayTab !== null && id !== "settings.open",
+  });
 
   useEffect(() => {
     const onOpenSettings = (event: Event) => {

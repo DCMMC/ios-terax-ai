@@ -237,6 +237,17 @@ export function matchBinding(
   );
 }
 
+export function isAppleSettingsShortcut(e: KeyboardEvent): boolean {
+  return (
+    IS_APPLE &&
+    e.metaKey &&
+    !e.ctrlKey &&
+    !e.altKey &&
+    !e.shiftKey &&
+    (e.key === "," || e.code === "Comma")
+  );
+}
+
 /**
  * Display helpers
  */

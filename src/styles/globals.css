@@ -197,6 +197,12 @@ html[data-chrome="borderless"] #settings-root {
 .xterm.focus {
   outline: none !important;
 }
+.terax-terminal-surface,
+.terax-terminal-surface * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
 
 .cm-editor,
 .cm-scroller {

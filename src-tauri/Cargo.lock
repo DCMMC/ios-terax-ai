@@ -5147,6 +5147,7 @@ name = "terax"
 version = "0.6.6"
 dependencies = [
  "bytes",
+ "cc",
  "dirs 5.0.1",
  "flate2",
  "futures-util",

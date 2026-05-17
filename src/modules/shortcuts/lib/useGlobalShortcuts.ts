@@ -2,10 +2,10 @@ import { useEffect, useRef } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   SHORTCUTS,
+  isAppleSettingsShortcut,
   matchBinding,
   type ShortcutId,
 } from "../shortcuts";
-import { IS_APPLE } from "@/lib/platform";
 
 export type ShortcutHandler = (e: KeyboardEvent) => void;
 export type ShortcutHandlers = Partial<Record<ShortcutId, ShortcutHandler>>;
@@ -27,14 +27,7 @@ export function useGlobalShortcuts(
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const { handlers, options } = latest.current;
-      if (
-        IS_APPLE &&
-        e.metaKey &&
-        !e.ctrlKey &&
-        !e.altKey &&
-        !e.shiftKey &&
-        e.key === ","
-      ) {
+      if (isAppleSettingsShortcut(e)) {
         const h = handlers["settings.open"];
         if (!h || options?.isDisabled?.("settings.open", e)) return;
         e.preventDefault();

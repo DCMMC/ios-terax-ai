@@ -265,6 +265,7 @@ function Recorder({
     const onDown = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      e.stopImmediatePropagation();
 
       if (e.key === "Escape") {
         onCancel();
@@ -300,6 +301,10 @@ function Recorder({
     };
 
     const onUp = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
       const isMod = ["Control", "Shift", "Alt", "Meta"].includes(e.key);
       if (isMod) {
         setMods({

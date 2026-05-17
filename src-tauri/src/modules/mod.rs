@@ -1,4 +1,6 @@
 pub mod fs;
+#[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+pub mod ios_linuxkit_native;
 #[cfg(mobile)]
 pub mod linuxkit;
 pub mod net;
