@@ -46,10 +46,13 @@ struct pending_terminal {
 };
 
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t g_start_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct pending_terminal g_pending = {0};
 static char *g_root_path = NULL;
 static terax_log_cb g_log = NULL;
 static bool g_booted = false;
+
+enum { TERAX_TTY_MAJOR = 4 };
 
 static char *dup_cstr(const char *s) {
     if (!s) return NULL;
@@ -111,6 +114,7 @@ int32_t terax_linuxkit_start_session(
 ) {
     if (!terminal_out || !pid_out) return -22;
 
+    pthread_mutex_lock(&g_start_lock);
     pthread_mutex_lock(&g_lock);
     g_pending.output = output;
     g_pending.exit = exit;
@@ -131,13 +135,26 @@ int32_t terax_linuxkit_start_session(
     });
 
     if (retval < 0 || !terminal) {
+        pthread_mutex_lock(&g_lock);
+        memset(&g_pending, 0, sizeof(g_pending));
+        pthread_mutex_unlock(&g_lock);
+        pthread_mutex_unlock(&g_start_lock);
         return retval < 0 ? retval : -5;
     }
 
     struct terax_terminal *t = (struct terax_terminal *)terminal;
+    pthread_mutex_lock(&g_lock);
+    if (!t->output) {
+        t->output = output;
+        t->exit = exit;
+        t->user = user;
+    }
+    memset(&g_pending, 0, sizeof(g_pending));
+    pthread_mutex_unlock(&g_lock);
     t->pid = pid;
     *terminal_out = terminal;
     *pid_out = pid;
+    pthread_mutex_unlock(&g_start_lock);
     return 0;
 }
 
@@ -235,17 +252,18 @@ void objc_put(nsobj_t object) {
 }
 
 nsobj_t Terminal_terminalWithType_number(int type, int number) {
-    (void)type;
     (void)number;
     struct terax_terminal *t = calloc(1, sizeof(*t));
     if (!t) return NULL;
 
-    pthread_mutex_lock(&g_lock);
-    t->output = g_pending.output;
-    t->exit = g_pending.exit;
-    t->user = g_pending.user;
-    memset(&g_pending, 0, sizeof(g_pending));
-    pthread_mutex_unlock(&g_lock);
+    if (type != TERAX_TTY_MAJOR) {
+        pthread_mutex_lock(&g_lock);
+        t->output = g_pending.output;
+        t->exit = g_pending.exit;
+        t->user = g_pending.user;
+        memset(&g_pending, 0, sizeof(g_pending));
+        pthread_mutex_unlock(&g_lock);
+    }
 
     return (nsobj_t)t;
 }
