@@ -4,6 +4,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <resolv.h>
 #include <sys/stat.h>
 
 #include "kernel/calls.h"
@@ -13,6 +17,7 @@
 #include "kernel/task.h"
 #include "fs/dev.h"
 #include "fs/devices.h"
+#include "fs/fd.h"
 #include "fs/path.h"
 #include "fs/tty.h"
 
@@ -208,6 +213,60 @@ void terax_linuxkit_set_log_callback(terax_log_cb cb) {
     pthread_mutex_unlock(&g_lock);
 }
 
+static void terax_write_file(const char *path, const char *data) {
+    if (!path || !data) return;
+    current = pid_get_task(1);
+    struct fd *fd = generic_open(path, O_WRONLY_ | O_CREAT_ | O_TRUNC_, 0666);
+    if (IS_ERR(fd)) return;
+    if (fd->ops && fd->ops->write) {
+        fd->ops->write(fd, data, strlen(data));
+    }
+    fd_close(fd);
+}
+
+static void terax_configure_dns(void) {
+    struct __res_state res;
+    memset(&res, 0, sizeof(res));
+    if (res_ninit(&res) != 0) {
+        terax_log("ios-linuxkit dns resolver init failed\n");
+        return;
+    }
+
+    char resolv_conf[2048];
+    size_t used = 0;
+    if (res.dnsrch[0] != NULL) {
+        used += snprintf(resolv_conf + used, sizeof(resolv_conf) - used, "search");
+        for (int i = 0; res.dnsrch[i] != NULL && used < sizeof(resolv_conf); i++) {
+            used += snprintf(resolv_conf + used, sizeof(resolv_conf) - used, " %s", res.dnsrch[i]);
+        }
+        if (used < sizeof(resolv_conf)) {
+            used += snprintf(resolv_conf + used, sizeof(resolv_conf) - used, "\n");
+        }
+    }
+
+    union res_sockaddr_union servers[NI_MAXSERV];
+    int servers_found = res_getservers(&res, servers, NI_MAXSERV);
+    char address[NI_MAXHOST];
+    for (int i = 0; i < servers_found && used < sizeof(resolv_conf); i++) {
+        union res_sockaddr_union server = servers[i];
+        if (server.sin.sin_len == 0) continue;
+        int err = getnameinfo((struct sockaddr *)&server.sin, server.sin.sin_len,
+                              address, sizeof(address), NULL, 0, NI_NUMERICHOST);
+        if (err != 0) continue;
+        used += snprintf(resolv_conf + used, sizeof(resolv_conf) - used,
+                         "nameserver %s\n", address);
+    }
+
+    if (used == 0) {
+        snprintf(resolv_conf, sizeof(resolv_conf), "nameserver 1.1.1.1\nnameserver 8.8.8.8\n");
+    } else {
+        resolv_conf[sizeof(resolv_conf) - 1] = '\0';
+    }
+
+    terax_write_file("/etc/resolv.conf", resolv_conf);
+    terax_log("ios-linuxkit dns configured\n");
+}
+
 int32_t terax_linuxkit_import_root_tar(const char *archive_path, const char *root_path, char *error_out, uintptr_t error_len) {
     if (!archive_path || !root_path) return -22;
     struct fakefsify_error err = {0};
@@ -270,6 +329,7 @@ int32_t terax_linuxkit_boot(const char *root_path) {
     tty_drivers[TTY_CONSOLE_MAJOR] = &g_ios_console_driver;
     set_console_device(TTY_CONSOLE_MAJOR, 1);
     create_stdio("/dev/console", TTY_CONSOLE_MAJOR, 1);
+    terax_configure_dns();
     exit_hook = terax_handle_exit;
     terax_log("ios-linuxkit ARM64 root booted\n");
     return 0;

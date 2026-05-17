@@ -430,10 +430,6 @@ impl LinuxKitBackend {
         {
             let state = state().lock().unwrap();
             if let Some(session) = state.native_pty_sessions.get(&id) {
-                log::info!(
-                    "[ios-terminal] rust pty_write id={id} bytes={}",
-                    data.len()
-                );
                 session.write(data.as_bytes());
                 return Ok(());
             }

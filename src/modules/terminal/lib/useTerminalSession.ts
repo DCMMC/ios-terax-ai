@@ -21,6 +21,7 @@ import {
   releaseSlot,
   setIosNativeTerminalInputEnabled,
   setSlotFocused,
+  syncIosNativeTerminalApplicationCursor,
 } from "./rendererPool";
 
 type Callbacks = {
@@ -117,8 +118,12 @@ function deliverPtyBytes(leafId: number, bytes: Uint8Array): void {
   const s = sessions.get(leafId);
   if (!s) return;
   const slot = getSlotForLeaf(leafId);
-  if (slot) slot.term.write(bytes);
-  else s.dormantRing.push(bytes);
+  if (slot) {
+    slot.term.write(bytes);
+    syncIosNativeTerminalApplicationCursor(leafId);
+  } else {
+    s.dormantRing.push(bytes);
+  }
 }
 
 async function openPtyForSession(

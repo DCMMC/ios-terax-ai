@@ -39,6 +39,7 @@ export type Slot = {
   fitTimer: ReturnType<typeof setTimeout> | null;
   ptyTimer: ReturnType<typeof setTimeout> | null;
   unhideRaf: number | null;
+  lastApplicationCursor: boolean | null;
   lastCols: number;
   lastRows: number;
   lastW: number;
@@ -51,6 +52,7 @@ let recyclerEl: HTMLDivElement | null = null;
 let adapter: SlotAdapter | null = null;
 let nativeInputListenerInstalled = false;
 let nativeInputEnabled = false;
+let nativeApplicationCursor: boolean | null = null;
 
 export function configureRendererPool(a: SlotAdapter): void {
   adapter = a;
@@ -115,6 +117,7 @@ function createSlot(): Slot {
     fitTimer: null,
     ptyTimer: null,
     unhideRaf: null,
+    lastApplicationCursor: null,
     lastCols: term.cols,
     lastRows: term.rows,
     lastW: 0,
@@ -145,6 +148,7 @@ function createSlot(): Slot {
     const leafId = slot.currentLeafId;
     if (leafId === null) return;
     adapter?.resolveLeaf(leafId)?.writeToPty(data);
+    syncIosNativeTerminalApplicationCursor(leafId);
   });
 
   slots.push(slot);
@@ -162,7 +166,6 @@ function installIosNativeInputBridge(): void {
   window.addEventListener("terax:native-terminal-input", (event) => {
     const data = (event as CustomEvent<unknown>).detail;
     if (typeof data !== "string" || data.length === 0) return;
-    iosDebugLog(`js native input event bytes=${data.length}`);
     const slot = slots.find(
       (s) =>
         s.currentLeafId !== null &&
@@ -172,7 +175,7 @@ function installIosNativeInputBridge(): void {
       iosDebugLog("js native input dropped: no focused terminal slot");
       return;
     }
-    iosDebugLog(`js native input -> pty leaf=${slot.currentLeafId}`);
+    syncIosNativeTerminalApplicationCursor(slot.currentLeafId);
     adapter?.resolveLeaf(slot.currentLeafId)?.writeToPty(data);
   });
   window.addEventListener("focusin", syncIosNativeInputFromDomFocus, true);
@@ -234,6 +237,38 @@ export function setIosNativeTerminalInputEnabled(enabled: boolean): void {
   void invoke("ios_set_terminal_input_enabled", { enabled }).catch((e) => {
     console.error("[terax] failed to update iOS terminal input focus:", e);
   });
+}
+
+function setIosNativeTerminalApplicationCursor(enabled: boolean): void {
+  if (!IS_IOS_RUNTIME || nativeApplicationCursor === enabled) return;
+  nativeApplicationCursor = enabled;
+  void invoke("ios_set_terminal_application_cursor", { enabled }).catch((e) => {
+    console.error("[terax] failed to update iOS terminal cursor mode:", e);
+  });
+}
+
+export function syncIosNativeTerminalApplicationCursor(leafId?: number): void {
+  if (!IS_IOS_RUNTIME) return;
+  const slot =
+    leafId === undefined
+      ? slots.find(
+          (s) =>
+            s.currentLeafId !== null &&
+            (adapter?.isLeafFocused(s.currentLeafId) ?? false),
+        )
+      : slots.find((s) => s.currentLeafId === leafId);
+  if (!slot) return;
+  const getMode = (
+    slot.term as unknown as {
+      getMode?: (mode: number, privateMode?: boolean) => boolean;
+    }
+  ).getMode;
+  if (typeof getMode !== "function") return;
+  const enabled = !!getMode.call(slot.term, 1, false);
+  if (slot.lastApplicationCursor === enabled && nativeApplicationCursor === enabled)
+    return;
+  slot.lastApplicationCursor = enabled;
+  setIosNativeTerminalApplicationCursor(enabled);
 }
 
 function focusIosNativeTerminalInput(): void {
@@ -424,6 +459,7 @@ function scheduleUnhide(slot: Slot): void {
       const leafId = slot.currentLeafId;
       if (leafId !== null && adapter?.isLeafFocused(leafId)) {
         if (IS_IOS_RUNTIME) {
+          syncIosNativeTerminalApplicationCursor(leafId);
           setIosNativeTerminalInputEnabled(true);
           focusIosNativeTerminalInput();
         } else {
@@ -583,6 +619,7 @@ export function applyTheme(): void {
 export function focusSlot(leafId: number): void {
   const slot = slots.find((s) => s.currentLeafId === leafId);
   if (slot && IS_IOS_RUNTIME) {
+    syncIosNativeTerminalApplicationCursor(leafId);
     setIosNativeTerminalInputEnabled(true);
     focusIosNativeTerminalInput();
     return;

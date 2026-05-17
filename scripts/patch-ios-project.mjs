@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 const root = process.cwd();
 const ldflags =
-  "$(inherited) -lsqlite3 -lz -lbz2 -liconv $(PROJECT_DIR)/../../../../ios-linuxkit/deps/build/Release-iphoneos/libarchive.a";
+  "$(inherited) -lsqlite3 -lz -lbz2 -liconv -lresolv $(PROJECT_DIR)/../../../../ios-linuxkit/deps/build/Release-iphoneos/libarchive.a";
 const projectYmlPath = join(root, "src-tauri/gen/apple/project.yml");
 const pbxPath = join(root, "src-tauri/gen/apple/terax.xcodeproj/project.pbxproj");
 

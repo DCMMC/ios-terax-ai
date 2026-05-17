@@ -11,6 +11,7 @@ extern "C" {
     fn TeraxInstallKeyCommands();
     fn TeraxFocusTerminalInput();
     fn TeraxSetTerminalInputEnabled(enabled: bool);
+    fn TeraxSetTerminalApplicationCursor(enabled: bool);
 }
 
 #[cfg(target_os = "ios")]
@@ -36,6 +37,18 @@ fn ios_set_terminal_input_enabled(enabled: bool) {
 #[cfg(not(target_os = "ios"))]
 #[tauri::command]
 fn ios_set_terminal_input_enabled(_enabled: bool) {}
+
+#[cfg(target_os = "ios")]
+#[tauri::command]
+fn ios_set_terminal_application_cursor(enabled: bool) {
+    unsafe {
+        TeraxSetTerminalApplicationCursor(enabled);
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+#[tauri::command]
+fn ios_set_terminal_application_cursor(_enabled: bool) {}
 
 #[tauri::command]
 fn ios_debug_log(message: String) {
@@ -172,6 +185,7 @@ pub fn run() {
             modules::linuxkit::linuxkit_health,
             ios_focus_terminal_input,
             ios_set_terminal_input_enabled,
+            ios_set_terminal_application_cursor,
             ios_debug_log,
             #[cfg(not(mobile))]
             open_settings_window,

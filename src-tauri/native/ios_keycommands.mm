@@ -6,16 +6,77 @@
 #include <atomic>
 
 static std::atomic_bool gTeraxTerminalInputEnabled(false);
+static std::atomic_bool gTeraxApplicationCursor(false);
 
 static BOOL TeraxTerminalInputEnabled(void) {
     return gTeraxTerminalInputEnabled.load(std::memory_order_acquire);
 }
 
-static NSString *TeraxArrow(NSString *key) {
-    if ([key isEqualToString:UIKeyInputUpArrow]) return @"\x1b[A";
-    if ([key isEqualToString:UIKeyInputDownArrow]) return @"\x1b[B";
-    if ([key isEqualToString:UIKeyInputRightArrow]) return @"\x1b[C";
-    if ([key isEqualToString:UIKeyInputLeftArrow]) return @"\x1b[D";
+static void TeraxDispatchTerminalInputToWebView(WKWebView *webView, NSString *input);
+
+static NSString *TeraxArrow(unichar direction) {
+    return [NSString stringWithFormat:@"\x1b%c%C",
+                                      gTeraxApplicationCursor.load(std::memory_order_acquire) ? 'O' : '[',
+                                      direction];
+}
+
+static NSInteger TeraxXtermModifierParam(UIKeyModifierFlags flags) {
+    NSInteger param = 1;
+    if (flags & UIKeyModifierShift) param += 1;
+    if (flags & UIKeyModifierAlternate) param += 2;
+    if (flags & UIKeyModifierControl) param += 4;
+    return param;
+}
+
+static NSString *TeraxCsiFinal(NSString *final, UIKeyModifierFlags flags) {
+    NSInteger modifier = TeraxXtermModifierParam(flags);
+    if (modifier == 1) return [@"\x1b[" stringByAppendingString:final];
+    return [NSString stringWithFormat:@"\x1b[1;%ld%@", (long)modifier, final];
+}
+
+static NSString *TeraxTildeKey(NSInteger code, UIKeyModifierFlags flags) {
+    NSInteger modifier = TeraxXtermModifierParam(flags);
+    if (modifier == 1) return [NSString stringWithFormat:@"\x1b[%ld~", (long)code];
+    return [NSString stringWithFormat:@"\x1b[%ld;%ld~", (long)code, (long)modifier];
+}
+
+static NSString *TeraxSpecialInput(NSString *key, UIKeyModifierFlags flags) {
+    if (flags & UIKeyModifierCommand) return nil;
+    if ([key isEqualToString:UIKeyInputEscape]) return @"\x1b";
+    if ([key isEqualToString:@"\t"]) {
+        return (flags & UIKeyModifierShift) ? @"\x1b[Z" : @"\t";
+    }
+    if ([key isEqualToString:UIKeyInputUpArrow]) {
+        return flags == 0 ? TeraxArrow('A') : TeraxCsiFinal(@"A", flags);
+    }
+    if ([key isEqualToString:UIKeyInputDownArrow]) {
+        return flags == 0 ? TeraxArrow('B') : TeraxCsiFinal(@"B", flags);
+    }
+    if ([key isEqualToString:UIKeyInputRightArrow]) {
+        return flags == 0 ? TeraxArrow('C') : TeraxCsiFinal(@"C", flags);
+    }
+    if ([key isEqualToString:UIKeyInputLeftArrow]) {
+        return flags == 0 ? TeraxArrow('D') : TeraxCsiFinal(@"D", flags);
+    }
+    if ([key isEqualToString:UIKeyInputHome]) return TeraxCsiFinal(@"H", flags);
+    if ([key isEqualToString:UIKeyInputEnd]) return TeraxCsiFinal(@"F", flags);
+    if ([key isEqualToString:UIKeyInputPageUp]) return TeraxTildeKey(5, flags);
+    if ([key isEqualToString:UIKeyInputPageDown]) return TeraxTildeKey(6, flags);
+    if (@available(iOS 15.0, *)) {
+        if ([key isEqualToString:UIKeyInputDelete]) return TeraxTildeKey(3, flags);
+    }
+    if ([key isEqualToString:UIKeyInputF1]) return @"\x1bOP";
+    if ([key isEqualToString:UIKeyInputF2]) return @"\x1bOQ";
+    if ([key isEqualToString:UIKeyInputF3]) return @"\x1bOR";
+    if ([key isEqualToString:UIKeyInputF4]) return @"\x1bOS";
+    if ([key isEqualToString:UIKeyInputF5]) return @"\x1b[15~";
+    if ([key isEqualToString:UIKeyInputF6]) return @"\x1b[17~";
+    if ([key isEqualToString:UIKeyInputF7]) return @"\x1b[18~";
+    if ([key isEqualToString:UIKeyInputF8]) return @"\x1b[19~";
+    if ([key isEqualToString:UIKeyInputF9]) return @"\x1b[20~";
+    if ([key isEqualToString:UIKeyInputF10]) return @"\x1b[21~";
+    if ([key isEqualToString:UIKeyInputF11]) return @"\x1b[23~";
+    if ([key isEqualToString:UIKeyInputF12]) return @"\x1b[24~";
     return nil;
 }
 
@@ -44,6 +105,162 @@ static UIKeyCommand *TeraxKeyCommand(NSString *input, UIKeyModifierFlags flags, 
         command.wantsPriorityOverSystemBehavior = YES;
     }
     return command;
+}
+
+static void TeraxAddTerminalKeyCommands(NSMutableArray<UIKeyCommand *> *commands, SEL action) {
+    NSMutableArray<NSString *> *specialKeys = [@[
+        UIKeyInputEscape, UIKeyInputUpArrow, UIKeyInputDownArrow, UIKeyInputLeftArrow,
+        UIKeyInputRightArrow, UIKeyInputPageUp, UIKeyInputPageDown, UIKeyInputHome,
+        UIKeyInputEnd, UIKeyInputF1, UIKeyInputF2, UIKeyInputF3, UIKeyInputF4,
+        UIKeyInputF5, UIKeyInputF6, UIKeyInputF7, UIKeyInputF8, UIKeyInputF9,
+        UIKeyInputF10, UIKeyInputF11, UIKeyInputF12, @"\t"
+    ] mutableCopy];
+    if (@available(iOS 15.0, *)) {
+        [specialKeys addObject:UIKeyInputDelete];
+    }
+
+    NSArray<NSNumber *> *specialModifiers = @[
+        @0,
+        @(UIKeyModifierShift),
+        @(UIKeyModifierAlternate),
+        @(UIKeyModifierControl),
+        @(UIKeyModifierShift | UIKeyModifierAlternate),
+        @(UIKeyModifierShift | UIKeyModifierControl),
+        @(UIKeyModifierAlternate | UIKeyModifierControl),
+        @(UIKeyModifierShift | UIKeyModifierAlternate | UIKeyModifierControl),
+    ];
+    for (NSString *special in specialKeys) {
+        for (NSNumber *modifiers in specialModifiers) {
+            if ([special isEqualToString:UIKeyInputEscape] && modifiers.unsignedIntegerValue != 0) continue;
+            if ([special isEqualToString:@"\t"] &&
+                modifiers.unsignedIntegerValue != 0 &&
+                modifiers.unsignedIntegerValue != UIKeyModifierShift) continue;
+            [commands addObject:TeraxKeyCommand(special, modifiers.unsignedIntegerValue, action)];
+        }
+    }
+
+    NSString *controlKeys = @"abcdefghijklmnopqrstuvwxyz@^26-=[]\\ ";
+    for (NSUInteger i = 0; i < controlKeys.length; i++) {
+        NSString *key = [controlKeys substringWithRange:NSMakeRange(i, 1)];
+        [commands addObject:TeraxKeyCommand(key, UIKeyModifierControl, action)];
+    }
+
+    NSString *metaKeys = @"abcdefghijklmnopqrstuvwxyz0123456789-=[]\\;',./";
+    for (NSUInteger i = 0; i < metaKeys.length; i++) {
+        NSString *key = [metaKeys substringWithRange:NSMakeRange(i, 1)];
+        [commands addObject:TeraxKeyCommand(key, UIKeyModifierAlternate, action)];
+    }
+}
+
+static NSString *TeraxInputForKeyCommand(UIKeyCommand *command) {
+    NSString *key = command.input ?: @"";
+    UIKeyModifierFlags flags = command.modifierFlags;
+
+    NSString *special = TeraxSpecialInput(key, flags);
+    if (special) return special;
+    if (flags & UIKeyModifierAlternate) {
+        return [@"\x1b" stringByAppendingString:key];
+    }
+    if (flags & UIKeyModifierControl) {
+        return TeraxControlInput(key);
+    }
+    return nil;
+}
+
+static NSString *TeraxInputForHardwareKey(NSInteger keyCode, NSString *text, UIKeyModifierFlags flags) {
+    if (flags & UIKeyModifierCommand) return nil;
+
+    switch (keyCode) {
+        case UIKeyboardHIDUsageKeyboardReturnOrEnter:
+        case UIKeyboardHIDUsageKeypadEnter:
+            return @"\r";
+        case UIKeyboardHIDUsageKeyboardDeleteOrBackspace:
+            return @"\x7f";
+        case UIKeyboardHIDUsageKeyboardTab:
+            return TeraxSpecialInput(@"\t", flags);
+        case UIKeyboardHIDUsageKeyboardEscape:
+            return TeraxSpecialInput(UIKeyInputEscape, flags);
+        case UIKeyboardHIDUsageKeyboardUpArrow:
+            return TeraxSpecialInput(UIKeyInputUpArrow, flags);
+        case UIKeyboardHIDUsageKeyboardDownArrow:
+            return TeraxSpecialInput(UIKeyInputDownArrow, flags);
+        case UIKeyboardHIDUsageKeyboardRightArrow:
+            return TeraxSpecialInput(UIKeyInputRightArrow, flags);
+        case UIKeyboardHIDUsageKeyboardLeftArrow:
+            return TeraxSpecialInput(UIKeyInputLeftArrow, flags);
+        case UIKeyboardHIDUsageKeyboardHome:
+            return TeraxSpecialInput(UIKeyInputHome, flags);
+        case UIKeyboardHIDUsageKeyboardEnd:
+            return TeraxSpecialInput(UIKeyInputEnd, flags);
+        case UIKeyboardHIDUsageKeyboardPageUp:
+            return TeraxSpecialInput(UIKeyInputPageUp, flags);
+        case UIKeyboardHIDUsageKeyboardPageDown:
+            return TeraxSpecialInput(UIKeyInputPageDown, flags);
+        case UIKeyboardHIDUsageKeyboardDeleteForward:
+            if (@available(iOS 15.0, *)) {
+                return TeraxSpecialInput(UIKeyInputDelete, flags);
+            }
+            return TeraxTildeKey(3, flags);
+        case UIKeyboardHIDUsageKeyboardF1:
+            return TeraxSpecialInput(UIKeyInputF1, flags);
+        case UIKeyboardHIDUsageKeyboardF2:
+            return TeraxSpecialInput(UIKeyInputF2, flags);
+        case UIKeyboardHIDUsageKeyboardF3:
+            return TeraxSpecialInput(UIKeyInputF3, flags);
+        case UIKeyboardHIDUsageKeyboardF4:
+            return TeraxSpecialInput(UIKeyInputF4, flags);
+        case UIKeyboardHIDUsageKeyboardF5:
+            return TeraxSpecialInput(UIKeyInputF5, flags);
+        case UIKeyboardHIDUsageKeyboardF6:
+            return TeraxSpecialInput(UIKeyInputF6, flags);
+        case UIKeyboardHIDUsageKeyboardF7:
+            return TeraxSpecialInput(UIKeyInputF7, flags);
+        case UIKeyboardHIDUsageKeyboardF8:
+            return TeraxSpecialInput(UIKeyInputF8, flags);
+        case UIKeyboardHIDUsageKeyboardF9:
+            return TeraxSpecialInput(UIKeyInputF9, flags);
+        case UIKeyboardHIDUsageKeyboardF10:
+            return TeraxSpecialInput(UIKeyInputF10, flags);
+        case UIKeyboardHIDUsageKeyboardF11:
+            return TeraxSpecialInput(UIKeyInputF11, flags);
+        case UIKeyboardHIDUsageKeyboardF12:
+            return TeraxSpecialInput(UIKeyInputF12, flags);
+        default:
+            break;
+    }
+
+    if (text.length == 0) return nil;
+    if (flags & UIKeyModifierAlternate) {
+        return [@"\x1b" stringByAppendingString:text];
+    }
+    if (flags & UIKeyModifierControl) {
+        return TeraxControlInput([text lowercaseString]);
+    }
+    return nil;
+}
+
+static NSString *TeraxInputForPress(UIPress *press) {
+    if (@available(iOS 13.4, *)) {
+        UIKey *key = press.key;
+        if (!key) return nil;
+        NSString *text = key.charactersIgnoringModifiers ?: key.characters ?: @"";
+        return TeraxInputForHardwareKey(key.keyCode, text, key.modifierFlags);
+    }
+    return nil;
+}
+
+static BOOL TeraxHandlePresses(NSSet<UIPress *> *presses, WKWebView *webView) {
+    if (!TeraxTerminalInputEnabled()) {
+        return NO;
+    }
+    for (UIPress *press in presses) {
+        NSString *input = TeraxInputForPress(press);
+        if (input.length > 0) {
+            TeraxDispatchTerminalInputToWebView(webView, input);
+            return YES;
+        }
+    }
+    return NO;
 }
 
 static WKWebView *TeraxFindWebView(UIView *view) {
@@ -97,7 +314,6 @@ static void TeraxDispatchTerminalInputToWebView(WKWebView *webView, NSString *in
     NSString *script = [NSString stringWithFormat:
         @"window.dispatchEvent(new CustomEvent('terax:native-terminal-input',{detail:(%@).input}));",
         json];
-    NSLog(@"[ios-terminal] native dispatch input length=%lu", (unsigned long)input.length);
     [webView evaluateJavaScript:script completionHandler:nil];
 }
 
@@ -178,22 +394,7 @@ static void TeraxDispatchTerminalInputToWebView(WKWebView *webView, NSString *in
         return commands;
     }
 
-    for (NSString *special in @[UIKeyInputEscape, UIKeyInputUpArrow, UIKeyInputDownArrow,
-                                UIKeyInputLeftArrow, UIKeyInputRightArrow, @"\t"]) {
-        [commands addObject:TeraxKeyCommand(special, 0, @selector(terax_terminalKeyCommand:))];
-    }
-
-    NSString *controlKeys = @"abcdefghijklmnopqrstuvwxyz@^26-=[]\\ ";
-    for (NSUInteger i = 0; i < controlKeys.length; i++) {
-        NSString *key = [controlKeys substringWithRange:NSMakeRange(i, 1)];
-        [commands addObject:TeraxKeyCommand(key, UIKeyModifierControl, @selector(terax_terminalKeyCommand:))];
-    }
-
-    NSString *metaKeys = @"abcdefghijklmnopqrstuvwxyz0123456789-=[]\\;',./";
-    for (NSUInteger i = 0; i < metaKeys.length; i++) {
-        NSString *key = [metaKeys substringWithRange:NSMakeRange(i, 1)];
-        [commands addObject:TeraxKeyCommand(key, UIKeyModifierAlternate, @selector(terax_terminalKeyCommand:))];
-    }
+    TeraxAddTerminalKeyCommands(commands, @selector(terax_terminalKeyCommand:));
 
     return commands;
 }
@@ -209,19 +410,7 @@ static void TeraxDispatchTerminalInputToWebView(WKWebView *webView, NSString *in
         return;
     }
 
-    NSString *key = command.input ?: @"";
-    UIKeyModifierFlags flags = command.modifierFlags;
-    NSString *input = nil;
-
-    if (flags == 0) {
-        input = TeraxArrow(key);
-        if (!input && [key isEqualToString:UIKeyInputEscape]) input = @"\x1b";
-        if (!input && [key isEqualToString:@"\t"]) input = @"\t";
-    } else if (flags & UIKeyModifierAlternate) {
-        input = [@"\x1b" stringByAppendingString:key];
-    } else if (flags & UIKeyModifierControl) {
-        input = TeraxControlInput(key);
-    }
+    NSString *input = TeraxInputForKeyCommand(command);
 
     if (input) {
         TeraxDispatchTerminalInputToWebView(self.webView, input);
@@ -232,6 +421,13 @@ static void TeraxDispatchTerminalInputToWebView(WKWebView *webView, NSString *in
     (void)action;
     (void)sender;
     return NO;
+}
+
+- (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+    if (TeraxHandlePresses(presses, self.webView)) {
+        return;
+    }
+    [super pressesBegan:presses withEvent:event];
 }
 
 @end
@@ -248,6 +444,10 @@ extern "C" void TeraxSetTerminalInputEnabled(bool enabled) {
             [gTeraxInputView resignFirstResponder];
         });
     }
+}
+
+extern "C" void TeraxSetTerminalApplicationCursor(bool enabled) {
+    gTeraxApplicationCursor.store(enabled, std::memory_order_release);
 }
 
 extern "C" void TeraxFocusTerminalInput(void) {
@@ -291,25 +491,43 @@ static void TeraxSwizzleInstanceMethod(Class cls, SEL original, SEL replacement)
 
 + (void)load {
     TeraxSwizzleInstanceMethod(self, @selector(keyCommands), @selector(terax_keyCommands));
+    TeraxSwizzleInstanceMethod(self, @selector(pressesBegan:withEvent:), @selector(terax_pressesBegan:withEvent:));
 }
 
 - (NSArray<UIKeyCommand *> *)terax_keyCommands {
     NSArray<UIKeyCommand *> *commands = [self terax_keyCommands];
-    UIKeyCommand *settings = [UIKeyCommand keyCommandWithInput:@","
-                                                 modifierFlags:UIKeyModifierCommand
-                                                        action:@selector(terax_openSettings:)];
+    NSMutableArray<UIKeyCommand *> *teraxCommands = [NSMutableArray new];
+    UIKeyCommand *settings = TeraxKeyCommand(@",", UIKeyModifierCommand, @selector(terax_openSettings:));
     settings.discoverabilityTitle = @"Open Terax Settings";
+    [teraxCommands addObject:settings];
 
-    if (commands) {
-        return [commands arrayByAddingObject:settings];
+    if (TeraxTerminalInputEnabled()) {
+        TeraxAddTerminalKeyCommands(teraxCommands, @selector(terax_webTerminalKeyCommand:));
     }
-    return @[ settings ];
+    return commands ? [commands arrayByAddingObjectsFromArray:teraxCommands] : teraxCommands;
 }
 
 - (void)terax_openSettings:(UIKeyCommand *)sender {
     (void)sender;
     [self evaluateJavaScript:@"window.dispatchEvent(new CustomEvent('terax:settings-open',{detail:'general'}));"
            completionHandler:nil];
+}
+
+- (void)terax_webTerminalKeyCommand:(UIKeyCommand *)command {
+    if (!TeraxTerminalInputEnabled()) {
+        return;
+    }
+    NSString *input = TeraxInputForKeyCommand(command);
+    if (input) {
+        TeraxDispatchTerminalInputToWebView(self, input);
+    }
+}
+
+- (void)terax_pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+    if (TeraxHandlePresses(presses, self)) {
+        return;
+    }
+    [self terax_pressesBegan:presses withEvent:event];
 }
 
 @end

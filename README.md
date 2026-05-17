@@ -93,6 +93,33 @@ bun run tauri dev          # development
 bun run tauri build        # production bundle
 ```
 
+**iOS / ios-linuxkit**
+
+The iOS port embeds the `ios-linuxkit` ARM64 guest as the execution backend. Terax keeps the same Tauri command surface, but mobile builds route PTY, shell, and filesystem operations into the embedded LinuxKit root instead of exposing the iOS host sandbox.
+
+Expected repository layout:
+
+```text
+../ios-linuxkit
+./terax
+```
+
+Useful commands:
+
+```bash
+bun run ios:linuxkit:build # build ios-linuxkit static libraries
+bun run ios:rootfs:sync    # copy ios-linuxkit root.tar.gz into Terax resources
+bun run ios:prepare        # build linuxkit and sync the rootfs
+bun run ios:build:device   # build signed device IPA
+bun run ios:deploy         # install IPA on IOS_DEVICE_ID
+bun run ios:launch         # launch io.carmo.terax on IOS_DEVICE_ID
+bun run ios:test-build     # prepare, build, and deploy
+```
+
+`scripts/ios-linuxkit.mjs` prepends `TERAX_HOMEBREW_BIN` or `.tmp-homebrew/bin` to `PATH`, so iOS build dependencies can be kept outside the system Homebrew prefix. By default it uses `../ios-linuxkit` and device `00008103-0015284626DB001E`; override with `IOS_LINUXKIT_DIR` and `IOS_DEVICE_ID`.
+
+The iOS terminal bridge follows the reference terminal in `../ios-linuxkit/app/Terminal.m`, `TerminalView.m`, and `terminal/term.js`: Ghostty-Web renders the terminal, native iOS text entry owns software/hardware keyboard input, and input is bridged back to the normal `pty_write` path. The bridge handles control/meta keys, escape/tab/arrows, Home/End, Page Up/Down, Delete, F1-F12, application cursor mode, Ctrl-C, and disables Ghostty's Web text input surface on iOS. DNS is configured into `/etc/resolv.conf` using the same libresolv flow as the standard ios-linuxkit app.
+
 **Checks**
 ```bash
 bunx tsc --noEmit          # frontend type-check

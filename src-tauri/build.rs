@@ -79,6 +79,7 @@ fn build_ios_linuxkit_bridge(target: &str) {
     println!("cargo:rustc-link-lib=z");
     println!("cargo:rustc-link-lib=bz2");
     println!("cargo:rustc-link-lib=iconv");
+    println!("cargo:rustc-link-lib=resolv");
     println!("cargo:rustc-link-lib=static=archive");
     println!("cargo:rustc-link-lib=static:+whole-archive=ish");
     println!("cargo:rustc-link-lib=static=fakefs");
