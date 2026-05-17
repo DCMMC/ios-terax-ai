@@ -88,13 +88,14 @@ static void TeraxDispatchTerminalInputToWebView(WKWebView *webView, NSString *in
     if (!webView || input.length == 0) {
         return;
     }
-    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:input options:0 error:nil];
+    NSDictionary *payload = @{@"input": input};
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
     NSString *json = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
     if (json.length == 0) {
         return;
     }
     NSString *script = [NSString stringWithFormat:
-        @"window.dispatchEvent(new CustomEvent('terax:native-terminal-input',{detail:%@}));",
+        @"window.dispatchEvent(new CustomEvent('terax:native-terminal-input',{detail:(%@).input}));",
         json];
     NSLog(@"[ios-terminal] native dispatch input length=%lu", (unsigned long)input.length);
     [webView evaluateJavaScript:script completionHandler:nil];

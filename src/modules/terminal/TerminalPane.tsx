@@ -1,3 +1,4 @@
+import { IS_IOS_RUNTIME } from "@/lib/platform";
 import { useTheme } from "@/modules/theme";
 import type { TerminalSearchAddon } from "./lib/terminalSurface";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
@@ -74,6 +75,10 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
         style={{
           visibility: visible ? "visible" : "hidden",
           pointerEvents: visible ? "auto" : "none",
+          WebkitTapHighlightColor: IS_IOS_RUNTIME ? "transparent" : undefined,
+          WebkitTouchCallout: IS_IOS_RUNTIME ? "none" : undefined,
+          WebkitUserSelect: IS_IOS_RUNTIME ? "none" : undefined,
+          userSelect: IS_IOS_RUNTIME ? "none" : undefined,
         }}
       />
     );
