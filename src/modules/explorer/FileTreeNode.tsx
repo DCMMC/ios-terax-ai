@@ -6,6 +6,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
+import { IS_IOS } from "@/lib/platform";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { memo, useCallback, useState } from "react";
@@ -158,12 +159,14 @@ function FileTreeNodeImpl({
               Open in Terminal
             </ContextMenuItem>
           )}
-          <ContextMenuItem
-            className={COMPACT_ITEM}
-            onSelect={() => void revealInFinder(path)}
-          >
-            Reveal in Finder
-          </ContextMenuItem>
+          {!IS_IOS && (
+            <ContextMenuItem
+              className={COMPACT_ITEM}
+              onSelect={() => void revealInFinder(path)}
+            >
+              Reveal in Finder
+            </ContextMenuItem>
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem
             className={COMPACT_ITEM}

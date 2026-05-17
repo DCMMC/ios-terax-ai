@@ -1,4 +1,4 @@
-import { IS_MAC, MOD_PROP } from "@/lib/platform";
+import { IS_APPLE, MOD_PROP } from "@/lib/platform";
 
 /**
  * Single source of truth for keyboard shortcuts.
@@ -243,7 +243,7 @@ export function matchBinding(
 export function getBindingTokens(binding?: KeyBinding): string[] {
   if (!binding) return [];
   const tokens: string[] = [];
-  if (IS_MAC) {
+  if (IS_APPLE) {
     if (binding.ctrl) tokens.push("⌃");
     if (binding.alt) tokens.push("⌥");
     if (binding.shift) tokens.push("⇧");

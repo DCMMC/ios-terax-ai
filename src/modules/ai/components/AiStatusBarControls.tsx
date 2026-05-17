@@ -76,7 +76,7 @@ export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
       type="button"
       onClick={onOpen}
       className={cn(
-        "flex h-6 items-center gap-1.5 rounded-md border border-border/60 bg-card px-2 text-xs",
+        "flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border/60 bg-card px-2 text-xs",
         "text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground",
       )}
       title="Open AI agent"
@@ -95,7 +95,7 @@ export function AiStatusBarControls() {
   const closePanel = useChatStore((s) => s.closePanel);
 
   return (
-    <div className="flex items-center gap-0.5">
+    <div className="flex shrink-0 items-center gap-0.5 whitespace-nowrap">
       <input
         ref={fileInputRef}
         type="file"
@@ -264,7 +264,7 @@ function ModelDropdown() {
           variant="ghost"
           size="sm"
           className={cn(
-            "h-5.5 gap-1 rounded-md px-1.5 my-1 text-xs hover:bg-accent hover:text-foreground",
+            "h-5.5 max-w-44 gap-1 rounded-md px-1.5 my-1 text-xs hover:bg-accent hover:text-foreground",
             currentProviderHasKey
               ? "text-muted-foreground"
               : "text-amber-600 dark:text-amber-400",
@@ -275,7 +275,7 @@ function ModelDropdown() {
               : `${current.label} — no key configured`
           }
         >
-          {current.label}
+          <span className="truncate">{current.label}</span>
           <HugeiconsIcon
             icon={ArrowDown01Icon}
             size={11}

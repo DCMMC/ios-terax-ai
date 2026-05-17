@@ -24,3 +24,9 @@ dist-ssr
 *.sw?
 
 *.tsbuildinfo
+
+# Local iOS build/tooling output
+.tmp-gems/
+.tmp-gems-ruby4/
+.tmp-homebrew/
+src-tauri/gen/

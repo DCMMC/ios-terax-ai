@@ -41,8 +41,14 @@ export function StatusBar({
   const openPanel = useChatStore((s) => s.openPanel);
 
   return (
-    <footer className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-border/60 bg-card/60 px-3 text-[11px]">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+    <footer
+      className="flex shrink-0 items-start justify-between gap-3 overflow-hidden border-t border-border/60 bg-card/60 px-3 pt-1 text-[11px]"
+      style={{
+        minHeight: "calc(2rem + env(safe-area-inset-bottom, 0px))",
+        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.25rem)",
+      }}
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
         <WorkspaceEnvSelector onSelect={onWorkspaceChange} />
         <CwdBreadcrumb cwd={cwd} filePath={filePath} home={home} onCd={onCd} />
         {privateActive ? (
@@ -60,7 +66,7 @@ export function StatusBar({
           </Tooltip>
         ) : null}
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex max-w-[60vw] shrink-0 items-center gap-1.5 overflow-x-auto overflow-y-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <AgentStatusPill onClick={onOpenMini} />
         {panelOpen && hasComposer ? (
           <AiStatusBarControls />

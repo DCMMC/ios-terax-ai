@@ -5,6 +5,7 @@ import {
   matchBinding,
   type ShortcutId,
 } from "../shortcuts";
+import { IS_APPLE } from "@/lib/platform";
 
 export type ShortcutHandler = (e: KeyboardEvent) => void;
 export type ShortcutHandlers = Partial<Record<ShortcutId, ShortcutHandler>>;
@@ -26,6 +27,21 @@ export function useGlobalShortcuts(
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const { handlers, options } = latest.current;
+      if (
+        IS_APPLE &&
+        e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.shiftKey &&
+        e.key === ","
+      ) {
+        const h = handlers["settings.open"];
+        if (!h || options?.isDisabled?.("settings.open", e)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        h(e);
+        return;
+      }
       for (const s of SHORTCUTS) {
         if (e.repeat && !s.allowRepeat) continue;
         const bindings = userShortcuts[s.id] || s.defaultBindings;

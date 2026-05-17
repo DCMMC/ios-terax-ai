@@ -5,6 +5,7 @@ import type { SettingsTab } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   AiScanIcon,
+  Cancel01Icon,
   InformationCircleIcon,
   Settings01Icon,
   UserMultiple02Icon,
@@ -46,14 +47,30 @@ function readInitialTab(): SettingsTab {
   return "general";
 }
 
-export function SettingsApp() {
-  const [active, setActive] = useState<SettingsTab>(readInitialTab);
+type SettingsAppProps = {
+  embedded?: boolean;
+  initialTab?: SettingsTab;
+  onClose?: () => void;
+};
+
+export function SettingsApp({
+  embedded = false,
+  initialTab,
+  onClose,
+}: SettingsAppProps = {}) {
+  const [active, setActive] = useState<SettingsTab>(
+    () => initialTab ?? readInitialTab(),
+  );
   const init = usePreferencesStore((s) => s.init);
   const ActiveSection = TABS.find(t => t.id === active)?.component;
 
   useEffect(() => {
     void init();
   }, [init]);
+
+  useEffect(() => {
+    if (initialTab) setActive(initialTab);
+  }, [initialTab]);
 
   useEffect(() => {
     const apply = (detail: string) => {
@@ -75,9 +92,9 @@ export function SettingsApp() {
   }, []);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground select-none">
+    <div className={`flex ${embedded ? "h-full" : "h-screen"} flex-col overflow-hidden bg-background text-foreground select-none`}>
       <header
-        data-tauri-drag-region
+        data-tauri-drag-region={embedded ? undefined : ""}
         className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${IS_MAC ? "pr-3 pl-22" : "pr-0 pl-3"
           }`}
       >
@@ -101,7 +118,18 @@ export function SettingsApp() {
             ))}
           </TabsList>
         </Tabs>
-        {USE_CUSTOM_WINDOW_CONTROLS && <WindowControls closeOnly />}
+        {onClose ? (
+          <button
+            type="button"
+            aria-label="Close settings"
+            onClick={onClose}
+            className="mr-1 flex size-7 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={2} />
+          </button>
+        ) : USE_CUSTOM_WINDOW_CONTROLS ? (
+          <WindowControls closeOnly />
+        ) : null}
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-8 pt-6 pb-7 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

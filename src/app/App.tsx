@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { IS_IOS } from "@/lib/platform";
 import {
   AgentRunBridge,
   AiInputBar,
@@ -43,7 +44,10 @@ import {
   type SearchTarget,
 } from "@/modules/header";
 import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
-import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
+import {
+  openSettingsWindow,
+  type SettingsTab,
+} from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { onKeysChanged } from "@/modules/settings/store";
 import {
@@ -52,6 +56,7 @@ import {
   type ShortcutHandlers,
 } from "@/modules/shortcuts";
 import { StatusBar } from "@/modules/statusbar";
+import { SettingsApp } from "@/settings/SettingsApp";
 import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
 import {
   disposeSession,
@@ -162,6 +167,10 @@ export default function App() {
   );
   useEffect(() => {
     // Forward-slash form so explorerRoot stays equal across home → OSC 7.
+    if (IS_IOS) {
+      setHome("/root");
+      return;
+    }
     homeDir()
       .then((p) => setHome(p.replace(/\\/g, "/")))
       .catch(() => setHome(null));
@@ -186,6 +195,8 @@ export default function App() {
       try {
         if (env.kind === "wsl") {
           nextHome = await getWslHome(env.distro);
+        } else if (IS_IOS) {
+          nextHome = "/root";
         } else {
           nextHome = (await homeDir()).replace(/\\/g, "/");
         }
@@ -210,6 +221,8 @@ export default function App() {
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
+  const [settingsOverlayTab, setSettingsOverlayTab] =
+    useState<SettingsTab | null>(null);
   const miniOpen = useChatStore((s) => s.mini.open);
   const openMini = useChatStore((s) => s.openMini);
   const focusInput = useChatStore((s) => s.focusInput);
@@ -671,6 +684,17 @@ export default function App() {
 
   useGlobalShortcuts(shortcutHandlers);
 
+  useEffect(() => {
+    const onOpenSettings = (event: Event) => {
+      const detail = (event as CustomEvent<SettingsTab>).detail;
+      setSettingsOverlayTab(detail ?? "general");
+    };
+    window.addEventListener("terax:settings-open", onOpenSettings);
+    return () => {
+      window.removeEventListener("terax:settings-open", onOpenSettings);
+    };
+  }, []);
+
   const registerTerminalHandle = useCallback(
     (leafId: number, h: TerminalPaneHandle | null) => {
       if (h) terminalRefs.current.set(leafId, h);
@@ -802,7 +826,10 @@ export default function App() {
   const shell = (
     <ThemeProvider>
       <TooltipProvider>
-        <div className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground">
+        <div
+          className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground"
+          style={{ height: "100dvh", maxHeight: "100dvh" }}
+        >
           <Header
             tabs={tabs}
             activeId={activeId}
@@ -989,6 +1016,25 @@ export default function App() {
           />
 
           <UpdaterDialog />
+
+          <AnimatePresence>
+            {settingsOverlayTab ? (
+              <motion.div
+                key="settings-overlay"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.14 }}
+                className="fixed inset-0 z-50 bg-background"
+              >
+                <SettingsApp
+                  embedded
+                  initialTab={settingsOverlayTab}
+                  onClose={() => setSettingsOverlayTab(null)}
+                />
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
 
           <AlertDialog
             open={pendingCloseTab !== null}

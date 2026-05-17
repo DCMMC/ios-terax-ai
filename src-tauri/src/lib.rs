@@ -122,6 +122,8 @@ pub fn run() {
             workspace::wsl_list_distros,
             workspace::wsl_default_distro,
             workspace::wsl_home,
+            #[cfg(mobile)]
+            modules::linuxkit::linuxkit_health,
             #[cfg(not(mobile))]
             open_settings_window,
             secrets::secrets_get,

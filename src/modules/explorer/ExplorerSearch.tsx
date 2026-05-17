@@ -1,4 +1,5 @@
 import { Input } from "@/components/ui/input";
+import { IS_IOS } from "@/lib/platform";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ContextMenu,
@@ -291,12 +292,14 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
                           Open in Terminal
                         </ContextMenuItem>
                       )}
-                      <ContextMenuItem
-                        className={COMPACT_ITEM}
-                        onSelect={() => void revealInFinder(hit.path)}
-                      >
-                        Reveal in Finder
-                      </ContextMenuItem>
+                      {!IS_IOS && (
+                        <ContextMenuItem
+                          className={COMPACT_ITEM}
+                          onSelect={() => void revealInFinder(hit.path)}
+                        >
+                          Reveal in Finder
+                        </ContextMenuItem>
+                      )}
                       <ContextMenuSeparator />
                       <ContextMenuItem
                         className={COMPACT_ITEM}

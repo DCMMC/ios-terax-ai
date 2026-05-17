@@ -8,10 +8,7 @@ pub mod pty;
 pub mod pty {
     use tauri::ipc::{Channel, Response};
 
-    use crate::modules::linuxkit::{
-        LinuxKitBackend, LinuxKitRequest, LinuxKitResponse, PtyCloseRequest, PtyOpenRequest,
-        PtyResizeRequest, PtyWriteRequest,
-    };
+    use crate::modules::linuxkit::LinuxKitBackend;
     use crate::modules::workspace::WorkspaceEnv;
 
     #[derive(Default)]
@@ -24,24 +21,15 @@ pub mod pty {
         rows: u16,
         cwd: Option<String>,
         _workspace: Option<WorkspaceEnv>,
-        _on_data: Channel<Response>,
-        _on_exit: Channel<i32>,
+        on_data: Channel<Response>,
+        on_exit: Channel<i32>,
     ) -> Result<u32, String> {
-        match LinuxKitBackend::new().request(LinuxKitRequest::PtyOpen(PtyOpenRequest {
-            cols,
-            rows,
-            cwd,
-        }))? {
-            LinuxKitResponse::U32 { value } => Ok(value),
-            _ => Err("ios-linuxkit pty_open returned an unexpected response".into()),
-        }
+        LinuxKitBackend::new().pty_open(cols, rows, cwd, on_data, on_exit)
     }
 
     #[tauri::command]
     pub fn pty_write(_state: tauri::State<PtyState>, id: u32, data: String) -> Result<(), String> {
-        LinuxKitBackend::new()
-            .request(LinuxKitRequest::PtyWrite(PtyWriteRequest { id, data }))
-            .map(|_| ())
+        LinuxKitBackend::new().pty_write(id, data)
     }
 
     #[tauri::command]
@@ -51,16 +39,12 @@ pub mod pty {
         cols: u16,
         rows: u16,
     ) -> Result<(), String> {
-        LinuxKitBackend::new()
-            .request(LinuxKitRequest::PtyResize(PtyResizeRequest { id, cols, rows }))
-            .map(|_| ())
+        LinuxKitBackend::new().pty_resize(id, cols, rows)
     }
 
     #[tauri::command]
     pub fn pty_close(_state: tauri::State<PtyState>, id: u32) -> Result<(), String> {
-        LinuxKitBackend::new()
-            .request(LinuxKitRequest::PtyClose(PtyCloseRequest { id }))
-            .map(|_| ())
+        LinuxKitBackend::new().pty_close(id)
     }
 }
 pub mod secrets;
@@ -118,10 +102,17 @@ pub mod shell {
         pub exit_code: Option<i32>,
     }
 
-    fn decode_json<T: serde::de::DeserializeOwned>(response: LinuxKitResponse, command: &str) -> Result<T, String> {
+    fn decode_json<T: serde::de::DeserializeOwned>(
+        response: LinuxKitResponse,
+        command: &str,
+    ) -> Result<T, String> {
         match response {
-            LinuxKitResponse::Json { value } => serde_json::from_value(value).map_err(|e| e.to_string()),
-            _ => Err(format!("ios-linuxkit {command} returned an unexpected response")),
+            LinuxKitResponse::Json { value } => {
+                serde_json::from_value(value).map_err(|e| e.to_string())
+            }
+            _ => Err(format!(
+                "ios-linuxkit {command} returned an unexpected response"
+            )),
         }
     }
 
@@ -132,11 +123,12 @@ pub mod shell {
         timeout_secs: Option<u64>,
         _workspace: Option<WorkspaceEnv>,
     ) -> Result<CommandOutput, String> {
-        let response = LinuxKitBackend::new().request(LinuxKitRequest::ShellRun(ShellRunRequest {
-            command,
-            cwd,
-            timeout_secs,
-        }))?;
+        let response =
+            LinuxKitBackend::new().request(LinuxKitRequest::ShellRun(ShellRunRequest {
+                command,
+                cwd,
+                timeout_secs,
+            }))?;
         decode_json(response, "shell_run_command")
     }
 
@@ -146,7 +138,9 @@ pub mod shell {
         cwd: Option<String>,
         _workspace: Option<WorkspaceEnv>,
     ) -> Result<u32, String> {
-        match LinuxKitBackend::new().request(LinuxKitRequest::ShellSessionOpen(ShellSessionOpenRequest { cwd }))? {
+        match LinuxKitBackend::new().request(LinuxKitRequest::ShellSessionOpen(
+            ShellSessionOpenRequest { cwd },
+        ))? {
             LinuxKitResponse::U32 { value } => Ok(value),
             _ => Err("ios-linuxkit shell_session_open returned an unexpected response".into()),
         }
@@ -160,19 +154,23 @@ pub mod shell {
         cwd: Option<String>,
         timeout_secs: Option<u64>,
     ) -> Result<SessionRunOutput, String> {
-        let response = LinuxKitBackend::new().request(LinuxKitRequest::ShellSessionRun(ShellSessionRunRequest {
-            id,
-            command,
-            cwd,
-            timeout_secs,
-        }))?;
+        let response = LinuxKitBackend::new().request(LinuxKitRequest::ShellSessionRun(
+            ShellSessionRunRequest {
+                id,
+                command,
+                cwd,
+                timeout_secs,
+            },
+        ))?;
         decode_json(response, "shell_session_run")
     }
 
     #[tauri::command]
     pub fn shell_session_close(_state: tauri::State<ShellState>, id: u32) -> Result<(), String> {
         LinuxKitBackend::new()
-            .request(LinuxKitRequest::ShellSessionClose(ShellSessionCloseRequest { id }))
+            .request(LinuxKitRequest::ShellSessionClose(
+                ShellSessionCloseRequest { id },
+            ))
             .map(|_| ())
     }
 
@@ -183,7 +181,9 @@ pub mod shell {
         cwd: Option<String>,
         _workspace: Option<WorkspaceEnv>,
     ) -> Result<u32, String> {
-        match LinuxKitBackend::new().request(LinuxKitRequest::BackgroundSpawn(BackgroundSpawnRequest { command, cwd }))? {
+        match LinuxKitBackend::new().request(LinuxKitRequest::BackgroundSpawn(
+            BackgroundSpawnRequest { command, cwd },
+        ))? {
             LinuxKitResponse::U32 { value } => Ok(value),
             _ => Err("ios-linuxkit shell_bg_spawn returned an unexpected response".into()),
         }
@@ -195,22 +195,28 @@ pub mod shell {
         handle: u32,
         since_offset: Option<u64>,
     ) -> Result<BackgroundLogResponse, String> {
-        let response = LinuxKitBackend::new().request(LinuxKitRequest::BackgroundLogs(BackgroundLogsRequest {
-            handle,
-            since_offset,
-        }))?;
+        let response = LinuxKitBackend::new().request(LinuxKitRequest::BackgroundLogs(
+            BackgroundLogsRequest {
+                handle,
+                since_offset,
+            },
+        ))?;
         decode_json(response, "shell_bg_logs")
     }
 
     #[tauri::command]
     pub fn shell_bg_kill(_state: tauri::State<ShellState>, handle: u32) -> Result<(), String> {
         LinuxKitBackend::new()
-            .request(LinuxKitRequest::BackgroundKill(BackgroundKillRequest { handle }))
+            .request(LinuxKitRequest::BackgroundKill(BackgroundKillRequest {
+                handle,
+            }))
             .map(|_| ())
     }
 
     #[tauri::command]
-    pub fn shell_bg_list(_state: tauri::State<ShellState>) -> Result<Vec<BackgroundProcInfo>, String> {
+    pub fn shell_bg_list(
+        _state: tauri::State<ShellState>,
+    ) -> Result<Vec<BackgroundProcInfo>, String> {
         let response = LinuxKitBackend::new().request(LinuxKitRequest::BackgroundList)?;
         decode_json(response, "shell_bg_list")
     }

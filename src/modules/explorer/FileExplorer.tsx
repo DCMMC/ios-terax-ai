@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { IS_IOS } from "@/lib/platform";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -369,12 +370,14 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
                   Open in Terminal
                 </ContextMenuItem>
               )}
-              <ContextMenuItem
-                className={COMPACT_ITEM}
-                onSelect={() => void revealInFinder(rootPath)}
-              >
-                Reveal in Finder
-              </ContextMenuItem>
+              {!IS_IOS && (
+                <ContextMenuItem
+                  className={COMPACT_ITEM}
+                  onSelect={() => void revealInFinder(rootPath)}
+                >
+                  Reveal in Finder
+                </ContextMenuItem>
+              )}
               <ContextMenuSeparator />
               <ContextMenuItem
                 className={COMPACT_ITEM}
