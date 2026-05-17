@@ -249,6 +249,10 @@ function iosDebugLog(message: string): void {
   void invoke("ios_debug_log", { message }).catch(() => {});
 }
 
+export function iosTerminalDebugLog(message: string): void {
+  iosDebugLog(message);
+}
+
 function syncIosNativeInputFromDomFocus(): void {
   if (!IS_IOS_RUNTIME) return;
   const active = document.activeElement;
@@ -356,6 +360,9 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   }
 
   slot.term.options.disableStdin = p.shellExited;
+  iosDebugLog(
+    `renderer bind leaf=${p.leafId} slot=${slot.id} shellExited=${p.shellExited} snapshot=${p.snapshot ? p.snapshot.length : 0}`,
+  );
   slot.term.clear();
   slot.term.reset();
 
@@ -416,7 +423,12 @@ function scheduleUnhide(slot: Slot): void {
       slot.host.style.visibility = "";
       const leafId = slot.currentLeafId;
       if (leafId !== null && adapter?.isLeafFocused(leafId)) {
-        slot.term.focus();
+        if (IS_IOS_RUNTIME) {
+          setIosNativeTerminalInputEnabled(true);
+          focusIosNativeTerminalInput();
+        } else {
+          slot.term.focus();
+        }
       }
     });
   });

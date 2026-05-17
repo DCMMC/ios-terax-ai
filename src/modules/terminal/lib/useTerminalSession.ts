@@ -17,6 +17,7 @@ import {
   configureRendererPool,
   focusSlot,
   getSlotForLeaf,
+  iosTerminalDebugLog,
   releaseSlot,
   setIosNativeTerminalInputEnabled,
   setSlotFocused,
@@ -133,6 +134,7 @@ async function openPtyForSession(
     {
       onData: (bytes) => deliverPtyBytes(leafId, bytes),
       onExit: (code) => {
+        iosTerminalDebugLog(`pty exit leaf=${leafId} code=${code}`);
         s.shellExited = true;
         s.pty = null;
         const slot = getSlotForLeaf(leafId);
@@ -185,6 +187,9 @@ function unbindLeafFromSlot(leafId: number, s: Session): void {
   if (!s.hasSlot) return;
   const out = releaseSlot(leafId);
   if (out) {
+    iosTerminalDebugLog(
+      `renderer release leaf=${leafId} snapshot=${out.snapshot ? out.snapshot.length : 0} cols=${out.cols} rows=${out.rows}`,
+    );
     s.snapshot = out.snapshot;
     if (out.cols > 0) s.cols = out.cols;
     if (out.rows > 0) s.rows = out.rows;
@@ -257,6 +262,7 @@ export async function respawnSession(
   const slot = getSlotForLeaf(leafId);
   if (slot) {
     slot.term.options.disableStdin = false;
+    iosTerminalDebugLog(`respawn clears renderer leaf=${leafId}`);
     slot.term.clear();
     slot.term.reset();
   }

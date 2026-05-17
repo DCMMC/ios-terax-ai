@@ -9,8 +9,8 @@ use tauri::ipc::{Channel, Response};
 
 use crate::modules::linuxkit::linuxkit_root_dir;
 
+const LINUXKIT_LOGIN: &str = "/bin/login";
 const LINUXKIT_SHELL: &str = "/bin/ash";
-const LINUXKIT_SHELL_ARG0: &str = "-ash";
 const COMMAND_TIMEOUT_SECS: u64 = 30;
 const LINUXKIT_ENV: &[&str] = &[
     "TERM=xterm-256color",
@@ -121,9 +121,11 @@ impl NativePtySession {
     ) -> Result<Self, String> {
         boot()?;
 
-        let exe = CString::new(LINUXKIT_SHELL).map_err(|e| e.to_string())?;
-        let arg0 = CString::new(LINUXKIT_SHELL_ARG0).map_err(|e| e.to_string())?;
-        let argv = [arg0.as_ptr(), ptr::null()];
+        let exe = CString::new(LINUXKIT_LOGIN).map_err(|e| e.to_string())?;
+        let arg0 = CString::new(LINUXKIT_LOGIN).map_err(|e| e.to_string())?;
+        let arg1 = CString::new("-f").map_err(|e| e.to_string())?;
+        let arg2 = CString::new("root").map_err(|e| e.to_string())?;
+        let argv = [arg0.as_ptr(), arg1.as_ptr(), arg2.as_ptr(), ptr::null()];
         let env = LINUXKIT_ENV
             .iter()
             .map(|value| CString::new(*value).map_err(|e| e.to_string()))
@@ -140,6 +142,7 @@ impl NativePtySession {
 
         let mut terminal = ptr::null_mut();
         let mut pid = 0;
+        log::info!("[ios-terminal] native pty start /bin/login -f root");
         let status = unsafe {
             terax_linuxkit_start_session(
                 exe.as_ptr(),
@@ -357,6 +360,7 @@ extern "C" fn on_native_exit(user: *mut c_void, code: i32) {
     let context = unsafe { &*(user as *const NativePtyContext) };
     context.closed.store(true, Ordering::Release);
     if !context.exited.swap(true, Ordering::AcqRel) {
+        log::warn!("[ios-terminal] native pty exit code={code}");
         let _ = context.on_exit.send(code);
     }
 }
