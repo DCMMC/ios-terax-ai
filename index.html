@@ -58,8 +58,28 @@
           var r = e.reason;
           log("[promise] " + ((r && (r.stack || r.message)) || String(r)));
         });
+        window.addEventListener("securitypolicyviolation", function (e) {
+          log("[csp] blocked " + e.blockedURI + "  (" + e.violatedDirective + ")");
+        });
         setTimeout(function () {
           log("[diag] main.tsx module executed: " + (window.__teraxMainLoaded ? "YES" : "NO"));
+          var mods = document.querySelectorAll('script[type="module"]');
+          log("[diag] module <script> tags: " + mods.length);
+          for (var i = 0; i < mods.length; i++) {
+            (function (src) {
+              if (!src) return;
+              fetch(src)
+                .then(function (r) {
+                  log("[fetch] " + src + " -> " + r.status + " ct=" + r.headers.get("content-type"));
+                })
+                .catch(function (err) { log("[fetch] " + src + " -> FAILED " + err); });
+              import(src)
+                .then(function () { log("[import] " + src + " -> OK"); })
+                .catch(function (err) {
+                  log("[import] " + src + " -> ERR " + ((err && (err.message || err)) || err));
+                });
+            })(mods[i].getAttribute("src"));
+          }
         }, 3000);
       })();
     </script>
