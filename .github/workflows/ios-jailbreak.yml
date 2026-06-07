@@ -1,0 +1,114 @@
+name: iOS Jailbreak IPA
+
+# Builds a certificate-free (fake-signed) IPA for jailbroken / sideloaded
+# iOS 16 devices. No Apple Developer account, certificate, or provisioning
+# profile is required — the app is built UNSIGNED and then fake-signed with
+# ldid (see scripts/ios-fakesign.mjs and docs/IOS_JAILBREAK_BUILD.md).
+#
+# Trigger manually from the Actions tab (workflow_dispatch) or by pushing an
+# `ios-v*` tag. The resulting Terax.ipa is uploaded as a build artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: "Xcode configuration"
+        type: choice
+        default: debug
+        options:
+          - debug
+          - release
+      linuxkit_backend:
+        description: >-
+          Build & link the ios-linuxkit native terminal backend. "disabled"
+          validates the full sign/package pipeline quickly but ships a stubbed
+          terminal; "enabled" cross-builds rcarmo/ios-linuxkit (heavy, may need
+          per-repo tweaks).
+        type: choice
+        default: disabled
+        options:
+          - disabled
+          - enabled
+  push:
+    tags:
+      - "ios-v*"
+
+concurrency:
+  group: ios-jailbreak-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Apple Silicon runner with a recent Xcode; targets arm64 iphoneos.
+    runs-on: macos-14
+    env:
+      # When the native backend is disabled, build.rs skips linking the
+      # ios-linuxkit static libs so the IPA still compiles end-to-end.
+      LINUXKIT_BACKEND: ${{ github.event.inputs.linuxkit_backend || 'disabled' }}
+      IOS_JB_CONFIG: ${{ github.event.inputs.configuration || 'debug' }}
+
+    steps:
+      - name: Checkout Terax
+        uses: actions/checkout@v4
+        with:
+          path: terax
+
+      # ios-linuxkit must be a sibling of the Terax checkout because
+      # build.rs / patch-ios-project.mjs reference ../ios-linuxkit.
+      - name: Checkout ios-linuxkit
+        if: env.LINUXKIT_BACKEND == 'enabled'
+        uses: actions/checkout@v4
+        with:
+          repository: rcarmo/ios-linuxkit
+          path: ios-linuxkit
+          submodules: recursive
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.0"
+
+      - name: Set up Rust (aarch64-apple-ios)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: terax/src-tauri -> target
+          key: ios-jailbreak-${{ env.IOS_JB_CONFIG }}
+
+      - name: Install ldid
+        # ldid performs the fake-signing. brew ships the ProcursusTeam build.
+        run: brew install ldid
+
+      - name: Install Tauri CLI
+        working-directory: terax
+        run: bun install
+
+      # --- ios-linuxkit native backend (optional) -----------------------------
+      # NOTE: rcarmo/ios-linuxkit has its own build system. The Terax helper
+      # `ios:linuxkit:build` only drives the xcodebuild targets; the C
+      # dependencies (libarchive + the meson libish_emu/libfakefs libs) may need
+      # a prior build step from that repo. Adjust here once verified on a runner.
+      - name: Build ios-linuxkit static libraries
+        if: env.LINUXKIT_BACKEND == 'enabled'
+        working-directory: terax
+        run: |
+          bun run ios:linuxkit:build
+          bun run ios:rootfs:sync
+      # ------------------------------------------------------------------------
+
+      - name: Build fake-signed jailbreak IPA
+        working-directory: terax
+        env:
+          # Disable native linuxkit linking unless the backend is enabled.
+          TERAX_IOS_LINUXKIT_NATIVE: ${{ env.LINUXKIT_BACKEND == 'enabled' && '1' || '0' }}
+        run: bun run ios:build:jailbreak
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Terax-ios16-jailbreak-${{ env.IOS_JB_CONFIG }}
+          path: terax/src-tauri/gen/apple/build/arm64/Terax.ipa
+          if-no-files-found: error

@@ -16,6 +16,8 @@
     "ios:rootfs:sync": "bun scripts/ios-linuxkit.mjs sync-root",
     "ios:prepare": "bun scripts/ios-linuxkit.mjs prepare",
     "ios:build:device": "bun scripts/ios-linuxkit.mjs build",
+    "ios:build:jailbreak": "bun scripts/ios-linuxkit.mjs build-jailbreak",
+    "ios:fakesign": "bun scripts/ios-fakesign.mjs",
     "ios:deploy": "bun scripts/ios-linuxkit.mjs deploy",
     "ios:launch": "bun scripts/ios-linuxkit.mjs launch",
     "ios:test-build": "bun scripts/ios-linuxkit.mjs test"
