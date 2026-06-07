@@ -92,24 +92,38 @@ function buildLinuxKit() {
 
   // Allow overriding the static-library target and configuration names
   // (comma-separated) without a code change once the real names are known.
-  const targets = (process.env.IOS_LINUXKIT_TARGETS ?? "libish,libfakefs,libish_emu")
+  // On newer ios-linuxkit the libish/libfakefs/libish_emu Xcode targets were
+  // renamed; the meson Ninja build still produces libish.a/libish_emu.a/
+  // libfakefs.a, so build the Meson/Ninja aggregate targets instead.
+  const targets = (process.env.IOS_LINUXKIT_TARGETS ?? "Meson,Ninja")
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean);
   const config = process.env.IOS_LINUXKIT_CONFIG ?? "Debug-ApplePleaseFixFB19282108";
   console.log(`ios-linuxkit targets: ${targets.join(", ")} (configuration: ${config})`);
 
-  run("xcodebuild", [
-    "-project",
-    project,
-    "-configuration",
-    config,
-    "-sdk",
-    "iphoneos",
-    `BUILD_DIR=${iosLinuxKitRoot}/build`,
-    ...targets.flatMap((t) => ["-target", t]),
-    "build",
-  ]);
+  run(
+    "xcodebuild",
+    [
+      "-project",
+      project,
+      "-configuration",
+      config,
+      "-sdk",
+      "iphoneos",
+      `BUILD_DIR=${iosLinuxKitRoot}/build`,
+      ...targets.flatMap((t) => ["-target", t]),
+      "build",
+    ],
+    // Probing the new layout: don't abort before the find diagnostic runs.
+    { allowFailure: true },
+  );
+
+  // Diagnostic: show where the static libraries actually landed so build.rs
+  // link-search paths can be matched to this ios-linuxkit revision.
+  console.log("--- produced static libraries (*.a) ---");
+  run("find", [`${iosLinuxKitRoot}/build`, "-name", "*.a"], { allowFailure: true });
+  run("find", [`${iosLinuxKitRoot}/deps/build`, "-name", "*.a"], { allowFailure: true });
 }
 
 function syncRoot() {

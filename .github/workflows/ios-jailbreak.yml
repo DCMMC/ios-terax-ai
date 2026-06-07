@@ -38,7 +38,7 @@ on:
           linuxkit_backend is enabled). Defaults to the pinned commit that
           still exposes the libish/libfakefs/libish_emu targets.
         type: string
-        default: aa97b225abcc226e03ca8ba38eff48a919bd6fea
+        default: 7532c98bd2a0c0b7b85ffc8475d8485b0689ba63
   push:
     tags:
       - "ios-v*"
@@ -94,7 +94,7 @@ jobs:
       - name: Pin & verify ios-linuxkit commit
         if: env.LINUXKIT_BACKEND == 'enabled'
         env:
-          IOS_LINUXKIT_REF: ${{ github.event.inputs.ios_linuxkit_ref || 'aa97b225abcc226e03ca8ba38eff48a919bd6fea' }}
+          IOS_LINUXKIT_REF: ${{ github.event.inputs.ios_linuxkit_ref || '7532c98bd2a0c0b7b85ffc8475d8485b0689ba63' }}
         run: |
           cd "$GITHUB_WORKSPACE/ios-linuxkit"
           git checkout --force "$IOS_LINUXKIT_REF"
@@ -148,7 +148,7 @@ jobs:
           path: |
             ios-linuxkit/build
             ios-linuxkit/deps/build
-          key: ios-linuxkit-${{ github.event.inputs.ios_linuxkit_ref || 'aa97b225abcc226e03ca8ba38eff48a919bd6fea' }}-xcode16-v1
+          key: ios-linuxkit-${{ github.event.inputs.ios_linuxkit_ref || '7532c98bd2a0c0b7b85ffc8475d8485b0689ba63' }}-xcode16-v2head
 
       - name: Build ios-linuxkit static libraries
         if: env.LINUXKIT_BACKEND == 'enabled' && steps.linuxkit-cache.outputs.cache-hit != 'true'
