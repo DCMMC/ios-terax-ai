@@ -35,7 +35,7 @@ on:
           linuxkit_backend is enabled). Defaults to the pinned commit that
           still exposes the libish/libfakefs/libish_emu targets.
         type: string
-        default: d2d4da9e5c3bb4d1178d42b30071eea9c9594584
+        default: aa97b225abcc226e03ca8ba38eff48a919bd6fea
   push:
     tags:
       - "ios-v*"
@@ -63,13 +63,17 @@ jobs:
       # ios-linuxkit must be a sibling of the Terax checkout because
       # build.rs / patch-ios-project.mjs reference ../ios-linuxkit.
       #
-      # Pinned to a specific commit: upstream master renamed/removed the
-      # libish/libfakefs/libish_emu Xcode targets that this fork's build.rs and
-      # helper scripts link against. d2d4da9e (2026-05-17) is the last commit
-      # before "build: remove legacy x86 guest support" (f682915c) and still
-      # exposes those targets, the Debug-ApplePleaseFixFB19282108 config, and
-      # the tools/fakefs.c / util/fchdir.c sources build.rs compiles.
-      # Override with IOS_LINUXKIT_REF if a different commit is needed.
+      # Pinned to a specific commit: upstream commit d2d4da9e "Disable legacy
+      # x86 Xcode targets" removed libish/libfakefs/libish_emu from the
+      # PBXProject active targets list, so xcodebuild no longer builds them
+      # (the orphaned target objects still linger in the pbxproj text). This
+      # fork's build.rs / helper scripts link against those exact targets, so
+      # pin to d2d4da9e's PARENT, aa97b225 "Add external folder mounts
+      # preference" (2026-05-17) — the last commit where libish/libfakefs/
+      # libish_emu are still active targets, with the
+      # Debug-ApplePleaseFixFB19282108 config and the tools/fakefs.c /
+      # util/fchdir.c sources build.rs compiles.
+      # Override with the ios_linuxkit_ref dispatch input if needed.
       - name: Checkout ios-linuxkit
         if: env.LINUXKIT_BACKEND == 'enabled'
         uses: actions/checkout@v4
@@ -85,7 +89,7 @@ jobs:
       - name: Pin & verify ios-linuxkit commit
         if: env.LINUXKIT_BACKEND == 'enabled'
         env:
-          IOS_LINUXKIT_REF: ${{ github.event.inputs.ios_linuxkit_ref || 'd2d4da9e5c3bb4d1178d42b30071eea9c9594584' }}
+          IOS_LINUXKIT_REF: ${{ github.event.inputs.ios_linuxkit_ref || 'aa97b225abcc226e03ca8ba38eff48a919bd6fea' }}
         run: |
           cd "$GITHUB_WORKSPACE/ios-linuxkit"
           git checkout --force "$IOS_LINUXKIT_REF"
