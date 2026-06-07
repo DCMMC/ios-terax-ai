@@ -75,9 +75,25 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: DCMMC/ios-linuxkit
-          ref: ${{ github.event.inputs.ios_linuxkit_ref || 'd2d4da9e5c3bb4d1178d42b30071eea9c9594584' }}
           path: ios-linuxkit
+          # Full history so the pinned commit below is always fetchable. Pinning
+          # via actions/checkout's `ref:` proved unreliable for an arbitrary SHA
+          # on a fork, so we check it out explicitly in the next step instead.
+          fetch-depth: 0
           submodules: recursive
+
+      - name: Pin & verify ios-linuxkit commit
+        if: env.LINUXKIT_BACKEND == 'enabled'
+        env:
+          IOS_LINUXKIT_REF: ${{ github.event.inputs.ios_linuxkit_ref || 'd2d4da9e5c3bb4d1178d42b30071eea9c9594584' }}
+        run: |
+          cd "$GITHUB_WORKSPACE/ios-linuxkit"
+          git checkout --force "$IOS_LINUXKIT_REF"
+          git submodule update --init --recursive
+          echo "ios-linuxkit HEAD: $(git rev-parse HEAD)"
+          git log -1 --oneline
+          echo -n "libish target in pbxproj: "
+          grep -c 'name = libish;' iSH.xcodeproj/project.pbxproj || echo 0
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
