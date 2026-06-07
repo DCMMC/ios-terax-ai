@@ -170,6 +170,9 @@ jobs:
         env:
           # Disable native linuxkit linking unless the backend is enabled.
           TERAX_IOS_LINUXKIT_NATIVE: ${{ env.LINUXKIT_BACKEND == 'enabled' && '1' || '0' }}
+          # On-screen debug console (src/debug-console.ts) so on-device errors
+          # are visible without a Mac/remote inspector. Remove when done.
+          VITE_DEBUG_CONSOLE: "1"
         run: bun run ios:build:jailbreak
 
       - name: Upload IPA
