@@ -6,6 +6,47 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Terax</title>
     <script>
+      // iOS < 16.4 (Safari/JSC) has no regex lookbehind. Several bundled deps
+      // build `new RegExp("(?<=...)")` at module load (GFM autolink/strikethrough
+      // boundaries, etc.), which throws "Invalid regular expression" and aborts
+      // the whole bundle — a black screen with no catchable error. If the engine
+      // can't do lookbehind, wrap RegExp so construction strips lookbehind groups
+      // instead of throwing. No-op on capable engines; identical output for every
+      // pattern the engine already accepts (only previously-throwing ones change).
+      (function () {
+        try {
+          new RegExp("(?<=a)");
+          return;
+        } catch (e) {}
+        var O = RegExp;
+        var LB = /\(\?<[=!](?:[^()\\]|\\.|\([^()]*\))*\)/g;
+        function P(pattern, flags) {
+          var hasFlags = arguments.length >= 2;
+          try {
+            return hasFlags ? new O(pattern, flags) : new O(pattern);
+          } catch (e1) {
+            var s = typeof pattern === "string" ? pattern.replace(LB, "") : pattern;
+            try {
+              return hasFlags ? new O(s, flags) : new O(s);
+            } catch (e2) {
+              return hasFlags ? new O("", flags) : new O("");
+            }
+          }
+        }
+        P.prototype = O.prototype;
+        try {
+          Object.getOwnPropertyNames(O).forEach(function (k) {
+            if (k === "prototype" || k === "length" || k === "name") return;
+            try {
+              P[k] = O[k];
+            } catch (e) {}
+          });
+        } catch (e) {}
+        RegExp = P;
+        if (typeof window !== "undefined") window.RegExp = P;
+      })();
+    </script>
+    <script>
       (function () {
         try {
           var t = localStorage.getItem("terax-ui-theme-shadow");
