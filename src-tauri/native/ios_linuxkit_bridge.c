@@ -348,12 +348,25 @@ int32_t terax_linuxkit_start_session(
     if (!exe || !terminal_out || !pid_out) return -22;
 
     int err = become_new_init_child();
-    if (err < 0) return err;
+    if (err < 0) {
+        char m[96];
+        snprintf(m, sizeof(m), "start_session step=become_new_init_child err=%d\n", err);
+        terax_log(m);
+        return err;
+    }
 
     struct tty *tty = pty_open_fake(&g_ios_pty_driver);
-    if (IS_ERR(tty)) return (int32_t)PTR_ERR(tty);
+    if (IS_ERR(tty)) {
+        char m[96];
+        snprintf(m, sizeof(m), "start_session step=pty_open_fake err=%d\n", (int)PTR_ERR(tty));
+        terax_log(m);
+        return (int32_t)PTR_ERR(tty);
+    }
     struct terax_terminal *terminal = terminal_for_tty(tty);
-    if (!terminal) return -5;
+    if (!terminal) {
+        terax_log("start_session step=terminal_for_tty err=-5\n");
+        return -5;
+    }
     terminal->output = output;
     terminal->exit = exit;
     terminal->user = user;
@@ -362,7 +375,12 @@ int32_t terax_linuxkit_start_session(
     snprintf(stdio_file, sizeof(stdio_file), "/dev/pts/%d", tty->num);
     err = create_stdio(stdio_file, TTY_PSEUDO_SLAVE_MAJOR, tty->num);
     tty_release(tty);
-    if (err < 0) return err;
+    if (err < 0) {
+        char m[96];
+        snprintf(m, sizeof(m), "start_session step=create_stdio err=%d\n", err);
+        terax_log(m);
+        return err;
+    }
 
     int argc = packed_count(argv);
     char *packed_argv = pack_strings(argv);
@@ -370,13 +388,19 @@ int32_t terax_linuxkit_start_session(
     if (!packed_argv || !packed_envp) {
         free(packed_argv);
         free(packed_envp);
+        terax_log("start_session step=pack_strings err=-12\n");
         return -12;
     }
 
     err = do_execve(exe, (size_t)argc, packed_argv, packed_envp);
     free(packed_argv);
     free(packed_envp);
-    if (err < 0) return err;
+    if (err < 0) {
+        char m[128];
+        snprintf(m, sizeof(m), "start_session step=do_execve exe=%s err=%d\n", exe, err);
+        terax_log(m);
+        return err;
+    }
 
     terminal->task = current;
     terminal->pid = current->pid;
