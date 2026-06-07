@@ -46,8 +46,10 @@ concurrency:
 
 jobs:
   build:
-    # Apple Silicon runner with a recent Xcode; targets arm64 iphoneos.
-    runs-on: macos-14
+    # Apple Silicon runner with Xcode 16 (macos-15). Xcode 16 is required
+    # because `tauri ios init` generates a project in objectVersion 77, which
+    # Xcode 15.x (the macos-14 default) cannot open.
+    runs-on: macos-15
     env:
       # When the native backend is disabled, build.rs skips linking the
       # ios-linuxkit static libs so the IPA still compiles end-to-end.
