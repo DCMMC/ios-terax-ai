@@ -42,14 +42,9 @@ jobs:
             libssl-dev \
             patchelf
 
-      - uses: pnpm/action-setup@v6
+      - uses: oven-sh/setup-bun@v2
         with:
-          version: 10
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
+          bun-version: "1.2.0"
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -62,7 +57,7 @@ jobs:
           key: ${{ matrix.platform }}-${{ matrix.rust-target }}
 
       - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Write Apple API key to disk
         if: startsWith(matrix.platform, 'macos')

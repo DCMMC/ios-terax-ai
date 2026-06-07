@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+		Entitlements embedded by the ldid fake-sign step for jailbreak / sideload
+		installs (see scripts/ios-fakesign.mjs and docs/IOS_JAILBREAK_BUILD.md).
+
+		This is intentionally minimal. ios-linuxkit runs as a userspace emulator
+		(ASBESTOS interpreter), so the app does NOT need JIT, no-sandbox, or any
+		com.apple.private.* entitlement to launch on a normal AppSync Unified /
+		ldid fake-sign install.
+
+		`application-identifier` must match PRODUCT_BUNDLE_IDENTIFIER (io.carmo.terax).
+		`get-task-allow` keeps the app debuggable, which jailbreak installers expect.
+	-->
+	<key>application-identifier</key>
+	<string>io.carmo.terax</string>
+	<key>get-task-allow</key>
+	<true/>
+
+	<!--
+		TrollStore-only extras. Uncomment when packaging specifically for
+		TrollStore on iOS 16; they are ignored / will fail validation on a plain
+		AppSync fake-sign install, so they are off by default.
+
+		<key>platform-application</key>
+		<true/>
+		<key>com.apple.private.security.no-container</key>
+		<true/>
+	-->
+</dict>
+</plist>

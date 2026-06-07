@@ -16,22 +16,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v6
+      - uses: oven-sh/setup-bun@v2
         with:
-          version: 10
+          bun-version: "1.2.0"
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
+      - run: bun install --frozen-lockfile
 
       - name: Type-check
-        run: pnpm exec tsc --noEmit
+        run: bunx tsc --noEmit
 
       - name: Build frontend
-        run: pnpm build
+        run: bun run build
 
   rust:
     runs-on: ubuntu-22.04
