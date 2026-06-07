@@ -12,12 +12,15 @@ on:
   workflow_dispatch:
     inputs:
       configuration:
-        description: "Xcode configuration"
+        # release is required for a standalone sideload/jailbreak IPA: a debug
+        # Tauri build expects a running dev server (it reads a *-server-addr
+        # file and panics without one), and points the webview at localhost.
+        description: "Xcode configuration for the Terax app"
         type: choice
-        default: debug
+        default: release
         options:
-          - debug
           - release
+          - debug
       linuxkit_backend:
         description: >-
           Build & link the ios-linuxkit native terminal backend. "disabled"
@@ -54,7 +57,7 @@ jobs:
       # When the native backend is disabled, build.rs skips linking the
       # ios-linuxkit static libs so the IPA still compiles end-to-end.
       LINUXKIT_BACKEND: ${{ github.event.inputs.linuxkit_backend || 'disabled' }}
-      IOS_JB_CONFIG: ${{ github.event.inputs.configuration || 'debug' }}
+      IOS_JB_CONFIG: ${{ github.event.inputs.configuration || 'release' }}
 
     steps:
       - name: Checkout Terax

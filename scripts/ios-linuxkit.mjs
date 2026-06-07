@@ -13,7 +13,10 @@ const ipaPath = `${repoRoot}/src-tauri/gen/apple/build/arm64/Terax.ipa`;
 
 // Certificate-free (jailbreak) build settings.
 const xcodeProject = `${repoRoot}/src-tauri/gen/apple/terax.xcodeproj`;
-const jailbreakConfig = process.env.IOS_JB_CONFIG ?? "debug";
+// release by default: a Tauri "debug" iOS build expects a running dev server
+// (xcode-script reads a *-server-addr file and panics without one), which makes
+// no sense for a standalone sideload/jailbreak IPA.
+const jailbreakConfig = process.env.IOS_JB_CONFIG ?? "release";
 const jailbreakDerivedData = `${repoRoot}/src-tauri/gen/apple/build`;
 const jailbreakIpaPath = `${repoRoot}/src-tauri/gen/apple/build/arm64/Terax.ipa`;
 const jailbreakEntitlements = `${repoRoot}/src-tauri/ios/Terax.jailbreak.entitlements`;
