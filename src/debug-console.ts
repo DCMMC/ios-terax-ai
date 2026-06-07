@@ -73,8 +73,9 @@ if (import.meta.env.VITE_DEBUG_CONSOLE) {
         init: () => void;
         show: () => void;
       };
-      eruda.init();
-      eruda.show(); // open by default; closable from eruda's UI
+      eruda.init(); // floating button only; tap to open. Not auto-shown so it
+      // doesn't cover the UI. Native logs ([ios-terminal/native] …) and JS
+      // errors are visible in its Console tab.
       buffer.forEach((line) => console.error(line)); // replay early startup errors
     } catch {
       showFallbackOverlay();

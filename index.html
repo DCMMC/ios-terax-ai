@@ -62,68 +62,6 @@
         } catch (e) {}
       })();
     </script>
-    <!-- TEMP on-device diagnostic (inline so it always runs, like the theme
-         script above). Remove once the black-screen cause is found. -->
-    <script>
-      (function () {
-        function panel() {
-          var d = document.getElementById("__terax_diag");
-          if (d) return d;
-          d = document.createElement("pre");
-          d.id = "__terax_diag";
-          d.style.cssText =
-            "position:fixed;left:0;top:0;right:0;max-height:70vh;overflow:auto;" +
-            "margin:0;padding:8px;z-index:2147483647;background:rgba(0,0,0,.92);" +
-            "color:#19ff8c;font:12px/1.4 monospace;white-space:pre-wrap";
-          var btn = document.createElement("button");
-          btn.textContent = "× close";
-          btn.style.cssText =
-            "position:fixed;top:4px;right:4px;z-index:2147483647;background:#222;" +
-            "color:#fff;border:1px solid #555;border-radius:4px;padding:2px 10px;font:12px monospace";
-          btn.onclick = function () { d.remove(); btn.remove(); };
-          var add = function () {
-            var r = document.body || document.documentElement;
-            r.appendChild(d); r.appendChild(btn);
-          };
-          if (document.body) add();
-          else document.addEventListener("DOMContentLoaded", add);
-          return d;
-        }
-        function log(msg) { panel().textContent += msg + "\n"; }
-        window.__teraxLog = log;
-        log("[diag] inline JS OK");
-        window.addEventListener("error", function (e) {
-          log("[error] " + e.message + "  @ " + e.filename + ":" + e.lineno + ":" + e.colno);
-        });
-        window.addEventListener("unhandledrejection", function (e) {
-          var r = e.reason;
-          log("[promise] " + ((r && (r.stack || r.message)) || String(r)));
-        });
-        window.addEventListener("securitypolicyviolation", function (e) {
-          log("[csp] blocked " + e.blockedURI + "  (" + e.violatedDirective + ")");
-        });
-        setTimeout(function () {
-          log("[diag] main.tsx module executed: " + (window.__teraxMainLoaded ? "YES" : "NO"));
-          var mods = document.querySelectorAll('script[type="module"]');
-          log("[diag] module <script> tags: " + mods.length);
-          for (var i = 0; i < mods.length; i++) {
-            (function (src) {
-              if (!src) return;
-              fetch(src)
-                .then(function (r) {
-                  log("[fetch] " + src + " -> " + r.status + " ct=" + r.headers.get("content-type"));
-                })
-                .catch(function (err) { log("[fetch] " + src + " -> FAILED " + err); });
-              import(src)
-                .then(function () { log("[import] " + src + " -> OK"); })
-                .catch(function (err) {
-                  log("[import] " + src + " -> ERR " + ((err && (err.message || err)) || err));
-                });
-            })(mods[i].getAttribute("src"));
-          }
-        }, 3000);
-      })();
-    </script>
     <script type="module" src="/src/debug-console.ts"></script>
   </head>
 
