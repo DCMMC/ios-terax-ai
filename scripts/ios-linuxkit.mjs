@@ -129,9 +129,14 @@ function detectIosScheme() {
   return "terax_iOS";
 }
 
-// Certificate-free jailbreak IPA: build an UNSIGNED .app with xcodebuild, then
-// fake-sign + package it with ldid (see scripts/ios-fakesign.mjs). This path
-// needs no Apple Developer account, certificate, or provisioning profile.
+// Certificate-free jailbreak IPA. We must go through `tauri ios build` rather
+// than driving xcodebuild directly: the Xcode "Build Rust Code" phase runs
+// `tauri ios xcode-script`, which connects to a local options server that only
+// `tauri ios build`/`dev` spins up (it writes the <id>-server-addr file the
+// script reads). Code signing is disabled via patch-ios-project, so the IPA
+// export step fails — that is expected and ignored; we fake-sign the unsigned
+// .app from the build with ldid (scripts/ios-fakesign.mjs). No Apple Developer
+// account, certificate, or provisioning profile is required.
 function buildJailbreakIpa() {
   // 1. Generate the Xcode project (idempotent; ignore "already initialized").
   run("bunx", ["tauri", "ios", "init", "--ci"], { allowFailure: true });
@@ -141,43 +146,19 @@ function buildJailbreakIpa() {
       "Check the Tauri iOS prerequisites (Rust aarch64-apple-ios target, Xcode).",
   );
 
-  // 2. Build the frontend and patch the generated Xcode project. `tauri ios
-  //    build` normally does this via beforeBuildCommand; we run it explicitly
-  //    because we drive xcodebuild directly to disable code signing.
-  run("bun", ["run", "build"]);
-  run("bun", ["run", "patch:ios-project"]);
+  // 2. Build via Tauri. beforeBuildCommand (build + patch:ios-project) disables
+  //    code signing, so this builds an unsigned .app and then fails at the IPA
+  //    export/sign step — allowFailure lets us recover and fake-sign ourselves.
+  console.log(`tauri ios build (configuration: ${jailbreakConfig}); export-sign failure is expected`);
+  run("bunx", ["tauri", "ios", "build", "--target", "aarch64", "--ci"], {
+    allowFailure: true,
+  });
 
-  // 3. Build the app with code signing fully disabled.
-  const scheme = detectIosScheme();
-  console.log(`Using iOS scheme: ${scheme} (configuration: ${jailbreakConfig})`);
-  run("xcodebuild", [
-    "-project",
-    xcodeProject,
-    "-scheme",
-    scheme,
-    "-configuration",
-    jailbreakConfig,
-    "-sdk",
-    "iphoneos",
-    "-derivedDataPath",
-    jailbreakDerivedData,
-    "-destination",
-    "generic/platform=iOS",
-    "ARCHS=arm64",
-    "ONLY_ACTIVE_ARCH=NO",
-    "ENABLE_BITCODE=NO",
-    "CODE_SIGNING_ALLOWED=NO",
-    "CODE_SIGNING_REQUIRED=NO",
-    "CODE_SIGN_IDENTITY=",
-    "CODE_SIGN_ENTITLEMENTS=",
-    "build",
-  ]);
-
-  // 4. Fake-sign the resulting .app and package the jailbreak IPA.
+  // 3. Fake-sign the unsigned .app produced by the build and package the IPA.
   run("bun", [
     "scripts/ios-fakesign.mjs",
     "--search",
-    `${jailbreakDerivedData}/Build/Products`,
+    jailbreakDerivedData,
     "--out",
     jailbreakIpaPath,
     "--entitlements",
