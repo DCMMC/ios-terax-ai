@@ -118,6 +118,12 @@ jobs:
         # ldid performs the fake-signing. brew ships the ProcursusTeam build.
         run: brew install ldid
 
+      - name: Install ios-linuxkit build tools
+        # The iSH Meson/Ninja Xcode targets shell out to meson + ninja
+        # (app/xcode-meson.sh); pkg-config is needed by the meson cross build.
+        if: env.LINUXKIT_BACKEND == 'enabled'
+        run: brew install meson ninja pkg-config
+
       - name: Install Tauri CLI
         working-directory: terax
         run: bun install
@@ -130,6 +136,10 @@ jobs:
       - name: Build ios-linuxkit static libraries
         if: env.LINUXKIT_BACKEND == 'enabled'
         working-directory: terax
+        env:
+          # The helper prepends TERAX_HOMEBREW_BIN to PATH for the xcodebuild
+          # invocation so the Meson/Ninja build phases can find meson/ninja.
+          TERAX_HOMEBREW_BIN: /opt/homebrew/bin
         run: |
           bun run ios:linuxkit:build
           bun run ios:rootfs:sync
