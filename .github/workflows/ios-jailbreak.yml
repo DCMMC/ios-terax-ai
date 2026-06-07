@@ -142,7 +142,10 @@ jobs:
           TERAX_HOMEBREW_BIN: /opt/homebrew/bin
         run: |
           bun run ios:linuxkit:build
-          bun run ios:rootfs:sync
+          # No ios:rootfs:sync: the LinuxKit rootfs is already committed at
+          # src-tauri/resources/ios-linuxkit/root.tar.gz and bundled via
+          # tauri.conf.json. sync-root expects an older LinuxKit.app product
+          # that this ios-linuxkit revision (iSH-ARM64) no longer produces.
       # ------------------------------------------------------------------------
 
       - name: Build fake-signed jailbreak IPA
