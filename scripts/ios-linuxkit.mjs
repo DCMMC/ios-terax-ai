@@ -65,6 +65,25 @@ function requireFile(path, hint) {
 function buildLinuxKit() {
   const project = `${iosLinuxKitRoot}/iSH.xcodeproj`;
 
+  // libarchive lives in its own Xcode project (deps/libarchive.xcodeproj) and
+  // is NOT built by the iSH library targets. build.rs links
+  // deps/build/Release-iphoneos/libarchive.a, so build it (Release) into
+  // deps/build first.
+  run("xcodebuild", [
+    "-project",
+    `${iosLinuxKitRoot}/deps/libarchive.xcodeproj`,
+    "-configuration",
+    "Release",
+    "-sdk",
+    "iphoneos",
+    `BUILD_DIR=${iosLinuxKitRoot}/deps/build`,
+    "-target",
+    "libarchive",
+    "ARCHS=arm64",
+    "ONLY_ACTIVE_ARCH=NO",
+    "build",
+  ]);
+
   // The hardcoded target / configuration names drift with upstream
   // ios-linuxkit, so print the project's real targets, schemes, and
   // configurations first. This makes the CI log reveal the correct names
