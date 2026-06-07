@@ -9,7 +9,6 @@ use tauri::ipc::{Channel, Response};
 
 use crate::modules::linuxkit::linuxkit_root_dir;
 
-const LINUXKIT_LOGIN: &str = "/bin/login";
 const LINUXKIT_SHELL: &str = "/bin/ash";
 const COMMAND_TIMEOUT_SECS: u64 = 30;
 const LINUXKIT_ENV: &[&str] = &[
@@ -123,11 +122,14 @@ impl NativePtySession {
     ) -> Result<Self, String> {
         boot()?;
 
-        let exe = CString::new(LINUXKIT_LOGIN).map_err(|e| e.to_string())?;
-        let arg0 = CString::new(LINUXKIT_LOGIN).map_err(|e| e.to_string())?;
-        let arg1 = CString::new("-f").map_err(|e| e.to_string())?;
-        let arg2 = CString::new("root").map_err(|e| e.to_string())?;
-        let argv = [arg0.as_ptr(), arg1.as_ptr(), arg2.as_ptr(), ptr::null()];
+        // Launch the login shell directly instead of `/bin/login -f root`:
+        // /bin/login's setuid/PAM/utmp work crashes (SIGSEGV, exit code 11)
+        // under the emulator. A leading-dash arg0 makes ash a login shell; the
+        // session env (HOME/USER/SHELL/PATH) is set below. This matches how the
+        // rest of the codebase launches the guest shell (LINUXKIT_SHELL_ARG0).
+        let exe = CString::new(LINUXKIT_SHELL).map_err(|e| e.to_string())?;
+        let arg0 = CString::new("-ash").map_err(|e| e.to_string())?;
+        let argv = [arg0.as_ptr(), ptr::null()];
         let env = LINUXKIT_ENV
             .iter()
             .map(|value| CString::new(*value).map_err(|e| e.to_string()))
@@ -144,7 +146,7 @@ impl NativePtySession {
 
         let mut terminal = ptr::null_mut();
         let mut pid = 0;
-        log::info!("[ios-terminal] native pty start /bin/login -f root");
+        log::info!("[ios-terminal] native pty start {LINUXKIT_SHELL} (-ash login shell)");
         let status = unsafe {
             terax_linuxkit_start_session(
                 exe.as_ptr(),
