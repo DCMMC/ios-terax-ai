@@ -9,6 +9,10 @@ import { createRoot } from "react-dom/client";
 import App from "./app/App";
 import { USE_CUSTOM_WINDOW_CONTROLS } from "./lib/platform";
 
+// TEMP diagnostic: tells the inline panel in index.html that this module
+// actually executed (bundle loaded and its imports didn't throw).
+(window as unknown as { __teraxMainLoaded?: boolean }).__teraxMainLoaded = true;
+
 if (USE_CUSTOM_WINDOW_CONTROLS) {
   document.documentElement.dataset.chrome = "borderless";
 }
