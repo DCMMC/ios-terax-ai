@@ -29,6 +29,13 @@ on:
         options:
           - disabled
           - enabled
+      ios_linuxkit_ref:
+        description: >-
+          ios-linuxkit commit/branch to build against (only used when
+          linuxkit_backend is enabled). Defaults to the pinned commit that
+          still exposes the libish/libfakefs/libish_emu targets.
+        type: string
+        default: d2d4da9e5c3bb4d1178d42b30071eea9c9594584
   push:
     tags:
       - "ios-v*"
@@ -55,11 +62,20 @@ jobs:
 
       # ios-linuxkit must be a sibling of the Terax checkout because
       # build.rs / patch-ios-project.mjs reference ../ios-linuxkit.
+      #
+      # Pinned to a specific commit: upstream master renamed/removed the
+      # libish/libfakefs/libish_emu Xcode targets that this fork's build.rs and
+      # helper scripts link against. d2d4da9e (2026-05-17) is the last commit
+      # before "build: remove legacy x86 guest support" (f682915c) and still
+      # exposes those targets, the Debug-ApplePleaseFixFB19282108 config, and
+      # the tools/fakefs.c / util/fchdir.c sources build.rs compiles.
+      # Override with IOS_LINUXKIT_REF if a different commit is needed.
       - name: Checkout ios-linuxkit
         if: env.LINUXKIT_BACKEND == 'enabled'
         uses: actions/checkout@v4
         with:
-          repository: rcarmo/ios-linuxkit
+          repository: DCMMC/ios-linuxkit
+          ref: ${{ github.event.inputs.ios_linuxkit_ref || 'd2d4da9e5c3bb4d1178d42b30071eea9c9594584' }}
           path: ios-linuxkit
           submodules: recursive
 
