@@ -1,0 +1,112 @@
+name: ios-linuxkit standalone IPA
+
+# Builds ios-linuxkit's OWN iOS terminal app (the iSH-ARM64 / "LinuxKit" app)
+# as a certificate-free, ldid-fake-signed IPA for jailbroken / TrollStore iOS.
+#
+# Why this lives in the Terax repo: this session can't push to the
+# DCMMC/ios-linuxkit fork, so the pipeline checks it out and builds it here.
+# Copy this file into ios-linuxkit/.github/workflows/ if you want it there.
+#
+# Purpose: a standalone terminal IPA isolates whether the ARM64 emulator works
+# on the device independent of Terax. If LinuxKit.app runs a shell here but the
+# Terax terminal crashes, the bug is in the Terax integration; if this also
+# crashes, it's the emulator/device.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ios_linuxkit_ref:
+        description: "ios-linuxkit commit/branch to build"
+        type: string
+        default: 7532c98bd2a0c0b7b85ffc8475d8485b0689ba63
+      scheme:
+        description: "Xcode scheme"
+        type: choice
+        default: iSH-ARM64
+        options:
+          - iSH-ARM64
+          - iSH-ARM64-ffmpeg
+
+concurrency:
+  group: ios-linuxkit-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Checkout ios-linuxkit
+        uses: actions/checkout@v4
+        with:
+          repository: DCMMC/ios-linuxkit
+          path: ios-linuxkit
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Pin ios-linuxkit commit
+        run: |
+          cd "$GITHUB_WORKSPACE/ios-linuxkit"
+          git checkout --force "${{ github.event.inputs.ios_linuxkit_ref || '7532c98bd2a0c0b7b85ffc8475d8485b0689ba63' }}"
+          git submodule update --init --recursive
+          git log -1 --oneline
+
+      - name: Install build tools
+        # Same as ios-linuxkit's own ci.yml build-mac job, plus ldid for signing.
+        run: brew install llvm lld ninja libarchive meson ldid
+
+      - name: Build unsigned app
+        working-directory: ios-linuxkit
+        run: |
+          xcodebuild \
+            -project iSH.xcodeproj \
+            -scheme "${{ github.event.inputs.scheme || 'iSH-ARM64' }}" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            -destination 'generic/platform=iOS' \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=NO ENABLE_BITCODE=NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            PRODUCT_BUNDLE_IDENTIFIER=io.carmo.linuxkit \
+            build
+
+      - name: Fake-sign and package IPA
+        working-directory: ios-linuxkit
+        run: |
+          set -euo pipefail
+          APP="$(find build/Build/Products -maxdepth 3 -name '*.app' -type d | head -1)"
+          if [ -z "$APP" ]; then echo "no .app produced"; exit 1; fi
+          echo "app: $APP"
+
+          cat > /tmp/jb.entitlements <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>get-task-allow</key><true/>
+          </dict></plist>
+          PLIST
+
+          # Fake-sign every Mach-O (frameworks, dylibs, app extensions) without
+          # entitlements, then the main executable with the jailbreak entitlements.
+          MAIN="$APP/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")"
+          while IFS= read -r f; do
+            if file "$f" | grep -q 'Mach-O'; then
+              if [ "$f" = "$MAIN" ]; then continue; fi
+              ldid -S "$f" || true
+            fi
+          done < <(find "$APP" -type f)
+          echo "signing main: $MAIN"
+          ldid -S/tmp/jb.entitlements "$MAIN"
+
+          rm -rf Payload LinuxKit.ipa
+          mkdir -p Payload
+          cp -R "$APP" "Payload/$(basename "$APP")"
+          zip -qry LinuxKit.ipa Payload
+          ls -la LinuxKit.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-linuxkit-standalone-ipa
+          path: ios-linuxkit/LinuxKit.ipa
+          if-no-files-found: error
