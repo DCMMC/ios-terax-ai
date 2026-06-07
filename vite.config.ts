@@ -26,8 +26,13 @@ export default defineConfig(async ({ mode }) => ({
         : [],
   },
   build: {
+    // Downlevel to Safari 16 for everyone except Windows (WebView2/Chromium):
+    // iOS 16's WKWebView is Safari 16, and newer syntax would throw at load on
+    // 16.0–16.3, leaving a blank/black screen. Harmless on newer desktop
+    // engines. NOTE: this only fixes unsupported *syntax*, not missing runtime
+    // APIs — those still need a polyfill if hit.
     target:
-      process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome120" : "es2022",
+      process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome120" : "safari16",
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
       input: {
