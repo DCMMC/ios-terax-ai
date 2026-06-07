@@ -7,7 +7,13 @@
 //
 // Loaded from index.html BEFORE main.tsx so the early error listeners are
 // installed before app code runs. Tree-shaken from normal builds (flag unset).
+import { attachConsole } from "@tauri-apps/plugin-log";
+
 if (import.meta.env.VITE_DEBUG_CONSOLE) {
+  // Forward native log::info! lines (e.g. [ios-terminal/native] …) from the
+  // tauri-plugin-log Webview target into the JS console so eruda shows them.
+  void attachConsole().catch(() => {});
+
   const buffer: string[] = [];
 
   const fmt = (v: unknown): string => {
