@@ -60,20 +60,32 @@ function requireFile(path, hint) {
 }
 
 function buildLinuxKit() {
+  const project = `${iosLinuxKitRoot}/iSH.xcodeproj`;
+
+  // The hardcoded target / configuration names drift with upstream
+  // ios-linuxkit, so print the project's real targets, schemes, and
+  // configurations first. This makes the CI log reveal the correct names
+  // when a build fails with "does not contain a target named ...".
+  run("xcodebuild", ["-list", "-project", project], { allowFailure: true });
+
+  // Allow overriding the static-library target and configuration names
+  // (comma-separated) without a code change once the real names are known.
+  const targets = (process.env.IOS_LINUXKIT_TARGETS ?? "libish,libfakefs,libish_emu")
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const config = process.env.IOS_LINUXKIT_CONFIG ?? "Debug-ApplePleaseFixFB19282108";
+  console.log(`ios-linuxkit targets: ${targets.join(", ")} (configuration: ${config})`);
+
   run("xcodebuild", [
     "-project",
-    `${iosLinuxKitRoot}/iSH.xcodeproj`,
+    project,
     "-configuration",
-    "Debug-ApplePleaseFixFB19282108",
+    config,
     "-sdk",
     "iphoneos",
     `BUILD_DIR=${iosLinuxKitRoot}/build`,
-    "-target",
-    "libish",
-    "-target",
-    "libfakefs",
-    "-target",
-    "libish_emu",
+    ...targets.flatMap((t) => ["-target", t]),
     "build",
   ]);
 }
