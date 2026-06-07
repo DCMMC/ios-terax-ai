@@ -140,6 +140,13 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(tauri_plugin_log::log::LevelFilter::Info)
+                // Forward to the webview console too, so native logs
+                // ([ios-terminal/native] …) are visible in the on-device
+                // devtools (eruda) for debugging the LinuxKit backend.
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
+                ])
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())

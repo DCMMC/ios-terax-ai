@@ -80,6 +80,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "construct-style-sheets-polyfill": "^3.1.0",
     "eruda": "^3.4.3",
     "ghostty-web": "github:rcarmo/ghostty-web#f82a69c",
     "motion": "^12.38.0",

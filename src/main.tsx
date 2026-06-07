@@ -1,3 +1,8 @@
+// iOS < 16.4 lacks Constructable StyleSheets (`new CSSStyleSheet()` throws
+// "Illegal constructor"); polyfill it before anything uses adoptedStyleSheets.
+// No-op on engines that already support it. Must stay the first import.
+import "construct-style-sheets-polyfill";
+
 import "@fontsource/jetbrains-mono/latin-400.css";
 import "@fontsource/jetbrains-mono/latin-700.css";
 import "@fontsource/jetbrains-mono/cyrillic-400.css";
