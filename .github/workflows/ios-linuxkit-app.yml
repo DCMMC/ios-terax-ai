@@ -3,9 +3,9 @@ name: ios-linuxkit standalone IPA
 # Builds ios-linuxkit's OWN iOS terminal app (the iSH-ARM64 / "LinuxKit" app)
 # as a certificate-free, ldid-fake-signed IPA for jailbroken / TrollStore iOS.
 #
-# Why this lives in the Terax repo: this session can't push to the
-# DCMMC/ios-linuxkit fork, so the pipeline checks it out and builds it here.
-# Copy this file into ios-linuxkit/.github/workflows/ if you want it there.
+# This lives in the Terax repo for convenience; it checks out DCMMC/ios-linuxkit
+# and builds it here. Copy into ios-linuxkit/.github/workflows/ if you want it
+# to run from that repo instead.
 #
 # Purpose: a standalone terminal IPA isolates whether the ARM64 emulator works
 # on the device independent of Terax. If LinuxKit.app runs a shell here but the
@@ -16,9 +16,12 @@ on:
   workflow_dispatch:
     inputs:
       ios_linuxkit_ref:
+        # master tip, which now includes the arm64 vdso fix. Before the fix the
+        # plain master shipped an empty libvdso.so.elf and the standalone app
+        # SIGSEGV'd on launch (musl decode_dyn(NULL)).
         description: "ios-linuxkit commit/branch to build"
         type: string
-        default: 7532c98bd2a0c0b7b85ffc8475d8485b0689ba63
+        default: 733eec18231e30522d490ae014a48bd02a366e81
       scheme:
         description: "Xcode scheme"
         type: choice
@@ -47,7 +50,7 @@ jobs:
       - name: Pin ios-linuxkit commit
         run: |
           cd "$GITHUB_WORKSPACE/ios-linuxkit"
-          git checkout --force "${{ github.event.inputs.ios_linuxkit_ref || '7532c98bd2a0c0b7b85ffc8475d8485b0689ba63' }}"
+          git checkout --force "${{ github.event.inputs.ios_linuxkit_ref || '733eec18231e30522d490ae014a48bd02a366e81' }}"
           git submodule update --init --recursive
           git log -1 --oneline
 
