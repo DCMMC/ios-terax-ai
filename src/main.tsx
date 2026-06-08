@@ -1,3 +1,8 @@
+// iOS < 16.4 lacks Constructable StyleSheets (`new CSSStyleSheet()` throws
+// "Illegal constructor"); polyfill it before anything uses adoptedStyleSheets.
+// No-op on engines that already support it. Must stay the first import.
+import "construct-style-sheets-polyfill";
+
 import "@fontsource/jetbrains-mono/latin-400.css";
 import "@fontsource/jetbrains-mono/latin-700.css";
 import "@fontsource/jetbrains-mono/cyrillic-400.css";
@@ -8,6 +13,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { createRoot } from "react-dom/client";
 import App from "./app/App";
 import { USE_CUSTOM_WINDOW_CONTROLS } from "./lib/platform";
+
+// TEMP diagnostic: tells the inline panel in index.html that this module
+// actually executed (bundle loaded and its imports didn't throw).
+(window as unknown as { __teraxMainLoaded?: boolean }).__teraxMainLoaded = true;
 
 if (USE_CUSTOM_WINDOW_CONTROLS) {
   document.documentElement.dataset.chrome = "borderless";

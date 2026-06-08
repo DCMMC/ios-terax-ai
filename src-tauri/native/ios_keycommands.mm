@@ -434,6 +434,20 @@ static void TeraxDispatchTerminalInputToWebView(WKWebView *webView, NSString *in
 
 static TeraxTerminalInputView *gTeraxInputView = nil;
 
+// Diagnostic: log the exact class+selector of any uncaught ObjC exception
+// (e.g. "unrecognized selector sent to instance") to NSLog/syslog before the
+// app aborts, so it can be captured via idevicesyslog / crash reports.
+static void TeraxUncaughtExceptionHandler(NSException *exception) {
+    NSLog(@"[terax-crash] uncaught %@: %@", exception.name, exception.reason);
+    for (NSString *frame in exception.callStackSymbols) {
+        NSLog(@"[terax-crash]   %@", frame);
+    }
+}
+
+__attribute__((constructor)) static void TeraxInstallExceptionLogger(void) {
+    NSSetUncaughtExceptionHandler(&TeraxUncaughtExceptionHandler);
+}
+
 extern "C" void TeraxInstallKeyCommands(void) {}
 
 extern "C" void TeraxSetTerminalInputEnabled(bool enabled) {

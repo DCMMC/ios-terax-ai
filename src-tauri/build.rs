@@ -54,7 +54,13 @@ fn build_ios_linuxkit_bridge(target: &str) {
         meson_dir.join("libfakefs.a").display()
     );
 
-    cc::Build::new()
+    // Gate the bridge's [terax-lk] syslog tracing on TERAX_IOS_DEBUG_LOG=1,
+    // driven by the pipeline `debug` input. Off in clean release builds.
+    println!("cargo:rerun-if-env-changed=TERAX_IOS_DEBUG_LOG");
+    let debug_log = std::env::var("TERAX_IOS_DEBUG_LOG").is_ok_and(|v| v == "1");
+
+    let mut bridge = cc::Build::new();
+    bridge
         .file("native/ios_linuxkit_bridge.c")
         .file(linuxkit_dir.join("tools/fakefs.c"))
         .file(linuxkit_dir.join("util/fchdir.c"))
@@ -65,8 +71,11 @@ fn build_ios_linuxkit_bridge(target: &str) {
         .define("LOG_HANDLER_NSLOG", "1")
         .define("ENGINE_ASBESTOS", "1")
         .define("GUEST_ARM64", "1")
-        .flag("-fblocks")
-        .compile("terax_ios_linuxkit_bridge");
+        .flag("-fblocks");
+    if debug_log {
+        bridge.define("TERAX_IOS_DEBUG_LOG", "1");
+    }
+    bridge.compile("terax_ios_linuxkit_bridge");
 
     println!("cargo:rustc-link-search=native={}", build_dir.display());
     println!("cargo:rustc-link-search=native={}", meson_dir.display());

@@ -11,13 +11,23 @@ name: iOS Jailbreak IPA
 on:
   workflow_dispatch:
     inputs:
+      debug:
+        description: >-
+          Build with debugging info enabled: the on-screen eruda debug console
+          (VITE_DEBUG_CONSOLE) and the native [terax-lk] syslog tracing. Off by
+          default so release artifacts stay clean.
+        type: boolean
+        default: false
       configuration:
-        description: "Xcode configuration"
+        # release is required for a standalone sideload/jailbreak IPA: a debug
+        # Tauri build expects a running dev server (it reads a *-server-addr
+        # file and panics without one), and points the webview at localhost.
+        description: "Xcode configuration for the Terax app"
         type: choice
-        default: debug
+        default: release
         options:
-          - debug
           - release
+          - debug
       linuxkit_backend:
         description: >-
           Build & link the ios-linuxkit native terminal backend. "disabled"
@@ -29,6 +39,13 @@ on:
         options:
           - disabled
           - enabled
+      ios_linuxkit_ref:
+        description: >-
+          ios-linuxkit commit/branch to build against (only used when
+          linuxkit_backend is enabled). Defaults to the pinned commit that
+          still exposes the libish/libfakefs/libish_emu targets.
+        type: string
+        default: b8a8feaa0946b2ef019159773d634b9d48c24fcb
   push:
     tags:
       - "ios-v*"
@@ -39,13 +56,15 @@ concurrency:
 
 jobs:
   build:
-    # Apple Silicon runner with a recent Xcode; targets arm64 iphoneos.
-    runs-on: macos-14
+    # Apple Silicon runner with Xcode 16 (macos-15). Xcode 16 is required
+    # because `tauri ios init` generates a project in objectVersion 77, which
+    # Xcode 15.x (the macos-14 default) cannot open.
+    runs-on: macos-15
     env:
       # When the native backend is disabled, build.rs skips linking the
       # ios-linuxkit static libs so the IPA still compiles end-to-end.
       LINUXKIT_BACKEND: ${{ github.event.inputs.linuxkit_backend || 'disabled' }}
-      IOS_JB_CONFIG: ${{ github.event.inputs.configuration || 'debug' }}
+      IOS_JB_CONFIG: ${{ github.event.inputs.configuration || 'release' }}
 
     steps:
       - name: Checkout Terax
@@ -55,13 +74,43 @@ jobs:
 
       # ios-linuxkit must be a sibling of the Terax checkout because
       # build.rs / patch-ios-project.mjs reference ../ios-linuxkit.
+      #
+      # Pinned to a specific commit: upstream commit d2d4da9e "Disable legacy
+      # x86 Xcode targets" removed libish/libfakefs/libish_emu from the
+      # PBXProject active targets list, so xcodebuild no longer builds them
+      # (the orphaned target objects still linger in the pbxproj text). This
+      # fork's build.rs / helper scripts link against those exact targets, so
+      # pin to b8a8feaa (branch terax-vdso-fix): aa97b225 "Add external folder
+      # mounts preference" (the last commit where libish/libfakefs/libish_emu
+      # are still active targets, with the Debug-ApplePleaseFixFB19282108 config
+      # and the tools/fakefs.c / util/fchdir.c sources build.rs compiles) PLUS
+      # the vdso fix, without which every dynamically-linked guest SIGSEGVs on
+      # launch (empty libvdso.so.elf -> musl decode_dyn(NULL)).
+      # Override with the ios_linuxkit_ref dispatch input if needed.
       - name: Checkout ios-linuxkit
         if: env.LINUXKIT_BACKEND == 'enabled'
         uses: actions/checkout@v4
         with:
-          repository: rcarmo/ios-linuxkit
+          repository: DCMMC/ios-linuxkit
           path: ios-linuxkit
+          # Full history so the pinned commit below is always fetchable. Pinning
+          # via actions/checkout's `ref:` proved unreliable for an arbitrary SHA
+          # on a fork, so we check it out explicitly in the next step instead.
+          fetch-depth: 0
           submodules: recursive
+
+      - name: Pin & verify ios-linuxkit commit
+        if: env.LINUXKIT_BACKEND == 'enabled'
+        env:
+          IOS_LINUXKIT_REF: ${{ github.event.inputs.ios_linuxkit_ref || 'b8a8feaa0946b2ef019159773d634b9d48c24fcb' }}
+        run: |
+          cd "$GITHUB_WORKSPACE/ios-linuxkit"
+          git checkout --force "$IOS_LINUXKIT_REF"
+          git submodule update --init --recursive
+          echo "ios-linuxkit HEAD: $(git rev-parse HEAD)"
+          git log -1 --oneline
+          echo -n "libish target in pbxproj: "
+          grep -c 'name = libish;' iSH.xcodeproj/project.pbxproj || echo 0
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -77,26 +126,51 @@ jobs:
         with:
           workspaces: terax/src-tauri -> target
           key: ios-jailbreak-${{ env.IOS_JB_CONFIG }}
+          # Persist the Rust target/registry even when the job fails, so the
+          # (slow, fat-LTO release) crate compile is reused across iterations.
+          cache-on-failure: "true"
 
       - name: Install ldid
         # ldid performs the fake-signing. brew ships the ProcursusTeam build.
         run: brew install ldid
+
+      - name: Install ios-linuxkit build tools
+        # The iSH Meson/Ninja Xcode targets shell out to meson + ninja
+        # (app/xcode-meson.sh); pkg-config is needed by the meson cross build.
+        if: env.LINUXKIT_BACKEND == 'enabled'
+        run: brew install meson ninja pkg-config
 
       - name: Install Tauri CLI
         working-directory: terax
         run: bun install
 
       # --- ios-linuxkit native backend (optional) -----------------------------
-      # NOTE: rcarmo/ios-linuxkit has its own build system. The Terax helper
-      # `ios:linuxkit:build` only drives the xcodebuild targets; the C
-      # dependencies (libarchive + the meson libish_emu/libfakefs libs) may need
-      # a prior build step from that repo. Adjust here once verified on a runner.
-      - name: Build ios-linuxkit static libraries
+      # The static libraries only depend on the pinned ios-linuxkit commit and
+      # the Xcode version, so cache them and skip the (slow) rebuild on a hit.
+      # Bump the trailing version when the build inputs change.
+      - name: Cache ios-linuxkit static libraries
         if: env.LINUXKIT_BACKEND == 'enabled'
+        id: linuxkit-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ios-linuxkit/build
+            ios-linuxkit/deps/build
+          key: ios-linuxkit-${{ github.event.inputs.ios_linuxkit_ref || 'b8a8feaa0946b2ef019159773d634b9d48c24fcb' }}-xcode16-v1
+
+      - name: Build ios-linuxkit static libraries
+        if: env.LINUXKIT_BACKEND == 'enabled' && steps.linuxkit-cache.outputs.cache-hit != 'true'
         working-directory: terax
+        env:
+          # The helper prepends TERAX_HOMEBREW_BIN to PATH for the xcodebuild
+          # invocation so the Meson/Ninja build phases can find meson/ninja.
+          TERAX_HOMEBREW_BIN: /opt/homebrew/bin
         run: |
           bun run ios:linuxkit:build
-          bun run ios:rootfs:sync
+          # No ios:rootfs:sync: the LinuxKit rootfs is already committed at
+          # src-tauri/resources/ios-linuxkit/root.tar.gz and bundled via
+          # tauri.conf.json. sync-root expects an older LinuxKit.app product
+          # that this ios-linuxkit revision (iSH-ARM64) no longer produces.
       # ------------------------------------------------------------------------
 
       - name: Build fake-signed jailbreak IPA
@@ -104,6 +178,12 @@ jobs:
         env:
           # Disable native linuxkit linking unless the backend is enabled.
           TERAX_IOS_LINUXKIT_NATIVE: ${{ env.LINUXKIT_BACKEND == 'enabled' && '1' || '0' }}
+          # Debugging info, gated on the `debug` dispatch input (off by default):
+          #   - VITE_DEBUG_CONSOLE: on-screen eruda console (src/debug-console.ts)
+          #   - TERAX_IOS_DEBUG_LOG: native [terax-lk] syslog tracing (build.rs
+          #     passes -DTERAX_IOS_DEBUG_LOG to the ios_linuxkit bridge).
+          VITE_DEBUG_CONSOLE: ${{ github.event.inputs.debug == 'true' && '1' || '0' }}
+          TERAX_IOS_DEBUG_LOG: ${{ github.event.inputs.debug == 'true' && '1' || '0' }}
         run: bun run ios:build:jailbreak
 
       - name: Upload IPA
