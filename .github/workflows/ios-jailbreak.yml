@@ -31,10 +31,10 @@ on:
       ios_linuxkit_ref:
         description: >-
           ios-linuxkit commit to build the native terminal backend against.
-          Defaults to the pinned commit (tag terax-base-vdso) that still
+          Defaults to the pinned commit (tag terax-base-vdso-epoll) that still
           exposes the libish/libfakefs/libish_emu targets.
         type: string
-        default: b8a8feaa0946b2ef019159773d634b9d48c24fcb
+        default: cf5445c640001569718b977919512dc90f1d21bb
   push:
     tags:
       - "ios-v*"
@@ -66,12 +66,13 @@ jobs:
       # PBXProject active targets list, so xcodebuild no longer builds them
       # (the orphaned target objects still linger in the pbxproj text). This
       # fork's build.rs / helper scripts link against those exact targets, so
-      # pin to b8a8feaa (branch terax-vdso-fix): aa97b225 "Add external folder
-      # mounts preference" (the last commit where libish/libfakefs/libish_emu
-      # are still active targets, with the Debug-ApplePleaseFixFB19282108 config
-      # and the tools/fakefs.c / util/fchdir.c sources build.rs compiles) PLUS
-      # the vdso fix, without which every dynamically-linked guest SIGSEGVs on
-      # launch (empty libvdso.so.elf -> musl decode_dyn(NULL)).
+      # pin to cf5445c6 (tag terax-base-vdso-epoll): aa97b225 "Add external
+      # folder mounts preference" (the last commit where libish/libfakefs/
+      # libish_emu are still active targets, with the Debug-ApplePleaseFixFB19282108
+      # config and the tools/fakefs.c / util/fchdir.c sources build.rs compiles)
+      # PLUS two fixes: the vdso fix (empty libvdso.so.elf -> musl decode_dyn(NULL)
+      # SIGSEGVs every guest) and the epoll fd-number fix (EEXIST on dup'd
+      # stdout/stderr crashed Bun/claude-code).
       # Override with the ios_linuxkit_ref dispatch input if needed.
       - name: Checkout ios-linuxkit
         uses: actions/checkout@v4
@@ -86,7 +87,7 @@ jobs:
 
       - name: Pin & verify ios-linuxkit commit
         env:
-          IOS_LINUXKIT_REF: ${{ github.event.inputs.ios_linuxkit_ref || 'b8a8feaa0946b2ef019159773d634b9d48c24fcb' }}
+          IOS_LINUXKIT_REF: ${{ github.event.inputs.ios_linuxkit_ref || 'cf5445c640001569718b977919512dc90f1d21bb' }}
         run: |
           cd "$GITHUB_WORKSPACE/ios-linuxkit"
           git checkout --force "$IOS_LINUXKIT_REF"
@@ -138,7 +139,7 @@ jobs:
           path: |
             ios-linuxkit/build
             ios-linuxkit/deps/build
-          key: ios-linuxkit-${{ github.event.inputs.ios_linuxkit_ref || 'b8a8feaa0946b2ef019159773d634b9d48c24fcb' }}-xcode16-v1
+          key: ios-linuxkit-${{ github.event.inputs.ios_linuxkit_ref || 'cf5445c640001569718b977919512dc90f1d21bb' }}-xcode16-v1
 
       - name: Build ios-linuxkit static libraries
         if: steps.linuxkit-cache.outputs.cache-hit != 'true'
