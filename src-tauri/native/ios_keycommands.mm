@@ -505,7 +505,15 @@ static void TeraxSwizzleInstanceMethod(Class cls, SEL original, SEL replacement)
 
 + (void)load {
     TeraxSwizzleInstanceMethod(self, @selector(keyCommands), @selector(terax_keyCommands));
-    TeraxSwizzleInstanceMethod(self, @selector(pressesBegan:withEvent:), @selector(terax_pressesBegan:withEvent:));
+    // NOTE: do NOT swizzle pressesBegan:withEvent:. UIResponder's default
+    // implementation forwards an unhandled press to the next responder using its
+    // own _cmd; invoked through the renamed "terax_pressesBegan:" selector, _cmd
+    // becomes terax_pressesBegan:, so UIKit then sends THAT selector to the next
+    // responder (a WebKit-internal view) which doesn't implement it -> an
+    // "unrecognized selector" SIGABRT on every key event while a terminal tab is
+    // open (i.e. typing in the search / new-folder fields crashes). Hardware-key
+    // input is covered by the keyCommands swizzle above + the
+    // TeraxTerminalInputView focus proxy, which use safe mechanisms.
 }
 
 - (NSArray<UIKeyCommand *> *)terax_keyCommands {
@@ -535,13 +543,6 @@ static void TeraxSwizzleInstanceMethod(Class cls, SEL original, SEL replacement)
     if (input) {
         TeraxDispatchTerminalInputToWebView(self, input);
     }
-}
-
-- (void)terax_pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
-    if (TeraxHandlePresses(presses, self)) {
-        return;
-    }
-    [self terax_pressesBegan:presses withEvent:event];
 }
 
 @end

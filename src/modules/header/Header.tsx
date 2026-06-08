@@ -98,6 +98,9 @@ export function Header({
   const splitRightTokens = tokensFor("pane.splitRight");
   const splitDownTokens = tokensFor("pane.splitDown");
   const useAppleOrdering = IS_MAC || IS_IOS_RUNTIME;
+  // On iOS there is no window to drag, and data-tauri-drag-region can swallow
+  // taps on the controls inside the header (toggle sidebar, new tab). Drop it.
+  const dragRegion = IS_IOS_RUNTIME ? {} : { "data-tauri-drag-region": "" };
 
   useEffect(() => {
     const el = rootRef.current;
@@ -137,7 +140,7 @@ export function Header({
   return (
     <div
       ref={rootRef}
-      data-tauri-drag-region
+      {...dragRegion}
       className={`flex h-10 shrink-0 items-center gap-2 border-b border-border/60 bg-card select-none ${
         useAppleOrdering ? "pr-2 pl-20" : "pr-0 pl-2"
       }`}
@@ -204,7 +207,7 @@ export function Header({
 
       <div
         className="flex min-w-0 flex-1 items-center gap-2"
-        data-tauri-drag-region
+        {...dragRegion}
       >
         <TabBar
           tabs={tabs}
@@ -218,7 +221,7 @@ export function Header({
           onPin={onPin}
           compact={compact}
         />
-        <div data-tauri-drag-region className="h-full min-w-2 flex-1" />
+        <div {...dragRegion} className="h-full min-w-2 flex-1" />
       </div>
 
       <SearchInline ref={searchRef} target={searchTarget} compact={compact} />
