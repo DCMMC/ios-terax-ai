@@ -9,6 +9,7 @@
 #include <netinet/in.h>
 #include <resolv.h>
 #include <sys/stat.h>
+#include <syslog.h>
 
 #include "kernel/calls.h"
 #include "kernel/errno.h"
@@ -66,6 +67,13 @@ static struct tty_driver g_ios_pty_driver;
 
 static void terax_log(const char *message) {
     if (!message) return;
+#ifdef TERAX_IOS_DEBUG_LOG
+    // Mirror to the system log so backend steps/errors are visible via
+    // idevicesyslog (the Rust callback only reaches stdout/eruda). Gated on the
+    // pipeline `debug` input (build.rs passes -DTERAX_IOS_DEBUG_LOG); off in
+    // clean release builds.
+    syslog(LOG_NOTICE, "[terax-lk] %s", message);
+#endif
     terax_log_cb cb = NULL;
     pthread_mutex_lock(&g_lock);
     cb = g_log;

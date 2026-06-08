@@ -9,7 +9,9 @@
 // installed before app code runs. Tree-shaken from normal builds (flag unset).
 import { attachConsole } from "@tauri-apps/plugin-log";
 
-if (import.meta.env.VITE_DEBUG_CONSOLE) {
+// Treat only "1" as on, so an explicit VITE_DEBUG_CONSOLE=0 (the pipeline's
+// debug-off default) keeps the console out of release builds.
+if (import.meta.env.VITE_DEBUG_CONSOLE === "1") {
   // Forward native log::info! lines (e.g. [ios-terminal/native] …) from the
   // tauri-plugin-log Webview target into the JS console so eruda shows them.
   void attachConsole().catch(() => {});
