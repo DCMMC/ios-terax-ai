@@ -28,22 +28,11 @@ on:
         options:
           - release
           - debug
-      linuxkit_backend:
-        description: >-
-          Build & link the ios-linuxkit native terminal backend. "disabled"
-          validates the full sign/package pipeline quickly but ships a stubbed
-          terminal; "enabled" cross-builds rcarmo/ios-linuxkit (heavy, may need
-          per-repo tweaks).
-        type: choice
-        default: disabled
-        options:
-          - disabled
-          - enabled
       ios_linuxkit_ref:
         description: >-
-          ios-linuxkit commit/branch to build against (only used when
-          linuxkit_backend is enabled). Defaults to the pinned commit that
-          still exposes the libish/libfakefs/libish_emu targets.
+          ios-linuxkit commit to build the native terminal backend against.
+          Defaults to the pinned commit (tag terax-base-vdso) that still
+          exposes the libish/libfakefs/libish_emu targets.
         type: string
         default: b8a8feaa0946b2ef019159773d634b9d48c24fcb
   push:
@@ -61,9 +50,6 @@ jobs:
     # Xcode 15.x (the macos-14 default) cannot open.
     runs-on: macos-15
     env:
-      # When the native backend is disabled, build.rs skips linking the
-      # ios-linuxkit static libs so the IPA still compiles end-to-end.
-      LINUXKIT_BACKEND: ${{ github.event.inputs.linuxkit_backend || 'disabled' }}
       IOS_JB_CONFIG: ${{ github.event.inputs.configuration || 'release' }}
 
     steps:
@@ -88,7 +74,6 @@ jobs:
       # launch (empty libvdso.so.elf -> musl decode_dyn(NULL)).
       # Override with the ios_linuxkit_ref dispatch input if needed.
       - name: Checkout ios-linuxkit
-        if: env.LINUXKIT_BACKEND == 'enabled'
         uses: actions/checkout@v4
         with:
           repository: DCMMC/ios-linuxkit
@@ -100,7 +85,6 @@ jobs:
           submodules: recursive
 
       - name: Pin & verify ios-linuxkit commit
-        if: env.LINUXKIT_BACKEND == 'enabled'
         env:
           IOS_LINUXKIT_REF: ${{ github.event.inputs.ios_linuxkit_ref || 'b8a8feaa0946b2ef019159773d634b9d48c24fcb' }}
         run: |
@@ -137,19 +121,17 @@ jobs:
       - name: Install ios-linuxkit build tools
         # The iSH Meson/Ninja Xcode targets shell out to meson + ninja
         # (app/xcode-meson.sh); pkg-config is needed by the meson cross build.
-        if: env.LINUXKIT_BACKEND == 'enabled'
         run: brew install meson ninja pkg-config
 
       - name: Install Tauri CLI
         working-directory: terax
         run: bun install
 
-      # --- ios-linuxkit native backend (optional) -----------------------------
+      # --- ios-linuxkit native backend ----------------------------------------
       # The static libraries only depend on the pinned ios-linuxkit commit and
       # the Xcode version, so cache them and skip the (slow) rebuild on a hit.
       # Bump the trailing version when the build inputs change.
       - name: Cache ios-linuxkit static libraries
-        if: env.LINUXKIT_BACKEND == 'enabled'
         id: linuxkit-cache
         uses: actions/cache@v4
         with:
@@ -159,7 +141,7 @@ jobs:
           key: ios-linuxkit-${{ github.event.inputs.ios_linuxkit_ref || 'b8a8feaa0946b2ef019159773d634b9d48c24fcb' }}-xcode16-v1
 
       - name: Build ios-linuxkit static libraries
-        if: env.LINUXKIT_BACKEND == 'enabled' && steps.linuxkit-cache.outputs.cache-hit != 'true'
+        if: steps.linuxkit-cache.outputs.cache-hit != 'true'
         working-directory: terax
         env:
           # The helper prepends TERAX_HOMEBREW_BIN to PATH for the xcodebuild
@@ -176,8 +158,8 @@ jobs:
       - name: Build fake-signed jailbreak IPA
         working-directory: terax
         env:
-          # Disable native linuxkit linking unless the backend is enabled.
-          TERAX_IOS_LINUXKIT_NATIVE: ${{ env.LINUXKIT_BACKEND == 'enabled' && '1' || '0' }}
+          # Always link the native ios-linuxkit terminal backend.
+          TERAX_IOS_LINUXKIT_NATIVE: "1"
           # Debugging info, gated on the `debug` dispatch input (off by default):
           #   - VITE_DEBUG_CONSOLE: on-screen eruda console (src/debug-console.ts)
           #   - TERAX_IOS_DEBUG_LOG: native [terax-lk] syslog tracing (build.rs
