@@ -39,20 +39,25 @@ const buttonVariants = cva(
   }
 )
 
-function Button({
-  className,
-  variant = "default",
-  size = "default",
-  asChild = false,
-  ...props
-}: React.ComponentProps<"button"> &
-  VariantProps<typeof buttonVariants> & {
-    asChild?: boolean
-  }) {
+// forwardRef is required: under Preact (preact/compat) a plain function
+// component drops the ref, so Radix `asChild` triggers (DropdownMenu, etc.) get
+// a non-DOM triggerRef and crash opening the menu with "triggerRef.current?.focus
+// is not a function" / "getBoundingClientRect is not a function".
+const Button = React.forwardRef<
+  HTMLButtonElement,
+  React.ComponentProps<"button"> &
+    VariantProps<typeof buttonVariants> & {
+      asChild?: boolean
+    }
+>(function Button(
+  { className, variant = "default", size = "default", asChild = false, ...props },
+  ref
+) {
   const Comp = asChild ? Slot.Root : "button"
 
   return (
     <Comp
+      ref={ref}
       data-slot="button"
       data-variant={variant}
       data-size={size}
@@ -60,6 +65,7 @@ function Button({
       {...props}
     />
   )
-}
+})
+Button.displayName = "Button"
 
 export { Button, buttonVariants }

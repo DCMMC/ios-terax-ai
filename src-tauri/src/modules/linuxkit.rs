@@ -1603,11 +1603,13 @@ fn init_linuxkit_root_dir() -> Result<PathBuf, String> {
         .join("Terax")
         .join("ios-linuxkit-root");
     let tar_path = locate_root_tar()?;
-    let fingerprint = root_archive_fingerprint(&tar_path)?;
     let marker = target.join(ROOT_READY_MARKER);
-    if fs::read_to_string(&marker).is_ok_and(|value| value == fingerprint)
-        && is_prepared_linuxkit_root(&target)
-    {
+    // Seed-once: if a prepared root already exists, keep it untouched instead of
+    // re-importing the bundled tar. The bundle is only the INITIAL seed, so app
+    // updates — even ones that ship a different root.tar.gz — never wipe the
+    // user's installed packages (apk add, npm install -g, files, etc.).
+    // To force a fresh re-seed, delete the ios-linuxkit-root directory.
+    if is_prepared_linuxkit_root(&target) {
         return Ok(target);
     }
 
@@ -1618,6 +1620,7 @@ fn init_linuxkit_root_dir() -> Result<PathBuf, String> {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     import_linuxkit_root_tar(&tar_path, &target)?;
+    let fingerprint = root_archive_fingerprint(&tar_path)?;
     fs::write(&marker, fingerprint).map_err(|e| e.to_string())?;
     Ok(target)
 }
