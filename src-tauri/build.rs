@@ -25,7 +25,14 @@ fn build_ios_keycommands() {
 
 fn build_ios_linuxkit_bridge(target: &str) {
     let manifest_dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let linuxkit_dir = manifest_dir.join("../../ios-linuxkit");
+    // Honor IOS_LINUXKIT_DIR so the bridge links against the same engine tree the
+    // rest of the pipeline (scripts/ios-linuxkit.mjs) builds. Falls back to the
+    // sibling ../../ios-linuxkit checkout when the env var is unset.
+    println!("cargo:rerun-if-env-changed=IOS_LINUXKIT_DIR");
+    let linuxkit_dir = match std::env::var_os("IOS_LINUXKIT_DIR") {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => manifest_dir.join("../../ios-linuxkit"),
+    };
     let platform_dir = if target.contains("sim") {
         "Debug-ApplePleaseFixFB19282108-iphonesimulator"
     } else {
