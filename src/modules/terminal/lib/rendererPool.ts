@@ -104,6 +104,7 @@ function createSlot(): Slot {
   getRecycler().appendChild(host);
   term.open(host);
   disableIosWebTerminalInput(host, term);
+  setupTerminalScrollback(host, term);
 
   const slot: Slot = {
     id: slots.length,
@@ -215,19 +216,128 @@ function disableIosWebTerminalInput(host: HTMLDivElement, term: Terminal): void 
   textarea.style.userSelect = "none";
   textarea.blur();
 
-  const activate = (event: Event) => {
-    const hasSelection =
-      typeof term.hasSelection === "function" ? term.hasSelection() : false;
-    if (!hasSelection) {
+  // Touch activation is handled in setupTerminalScrollback so a swipe scrolls
+  // history instead of immediately grabbing focus; only a tap activates input.
+  host.addEventListener(
+    "mousedown",
+    (event) => activateIosNativeInput(term, event),
+    { capture: true },
+  );
+}
+
+// Focus the iOS native text input for a tap on the terminal (Ghostty stays the
+// renderer; iOS owns text entry). Shared by mousedown and tap-to-activate.
+function activateIosNativeInput(term: Terminal, event: Event): void {
+  const t = term as Terminal & { hasSelection?: () => boolean };
+  const hasSelection =
+    typeof t.hasSelection === "function" ? t.hasSelection() : false;
+  if (!hasSelection) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+  setIosNativeTerminalInputEnabled(true);
+  focusIosNativeTerminalInput();
+}
+
+// ghostty-web's built-in wheel handler only forwards wheel as mouse events when
+// an app has mouse-tracking enabled (it returns early otherwise) and it has no
+// touch handling at all — so the local scrollback never scrolls via wheel or
+// finger swipe. Add both here. viewportY is "lines scrolled up from the bottom"
+// (0 = latest output, getScrollbackLength() = oldest), so scrolling up / dragging
+// the finger down should increase it.
+type ScrollableTerm = Terminal & {
+  getViewportY?: () => number;
+  getScrollbackLength?: () => number;
+  scrollToLine?: (line: number) => void;
+  renderer?: { charHeight?: number };
+  rows?: number;
+};
+
+function termCharHeight(term: ScrollableTerm): number {
+  const h = term.renderer?.charHeight;
+  return h && h > 0 ? h : 16;
+}
+
+function scrollViewportTo(term: ScrollableTerm, viewportY: number): boolean {
+  const max = term.getScrollbackLength?.() ?? 0;
+  const next = Math.max(0, Math.min(max, Math.round(viewportY)));
+  if (next === (term.getViewportY?.() ?? 0)) return false;
+  term.scrollToLine?.(next);
+  return true;
+}
+
+function setupTerminalScrollback(host: HTMLDivElement, term: Terminal): void {
+  const t = term as ScrollableTerm;
+
+  host.addEventListener(
+    "wheel",
+    (event) => {
+      // A mouse-tracking app already consumed it (ghostty-web preventDefault'd).
+      if (event.defaultPrevented) return;
+      const vy = t.getViewportY?.();
+      if (vy == null) return;
+      let dyLines: number;
+      if (event.deltaMode === 1) dyLines = event.deltaY; // DOM_DELTA_LINE
+      else if (event.deltaMode === 2)
+        dyLines = event.deltaY * (t.rows ?? 24); // DOM_DELTA_PAGE
+      else dyLines = event.deltaY / termCharHeight(t); // DOM_DELTA_PIXEL
+      const step = dyLines < 0 ? Math.floor(dyLines) : Math.ceil(dyLines);
+      if (step === 0) return;
+      // Wheel up (deltaY < 0, step < 0) -> older history -> increase viewportY.
+      if (scrollViewportTo(t, vy - step)) event.preventDefault();
+    },
+    { passive: false },
+  );
+
+  // Touch drag-to-scroll. ghostty-web has no touch handling; on iOS we also own
+  // tap-to-activate so a swipe scrolls instead of grabbing focus.
+  let active = false;
+  let startY = 0;
+  let startTop = 0;
+  let moved = false;
+
+  host.addEventListener(
+    "touchstart",
+    (event) => {
+      if (event.touches.length !== 1) {
+        active = false;
+        return;
+      }
+      active = true;
+      moved = false;
+      startY = event.touches[0].clientY;
+      startTop = t.getViewportY?.() ?? 0;
+    },
+    { capture: true, passive: true },
+  );
+
+  host.addEventListener(
+    "touchmove",
+    (event) => {
+      if (!active || event.touches.length !== 1) return;
+      const dy = event.touches[0].clientY - startY;
+      if (!moved && Math.abs(dy) < 8) return; // below tap threshold
+      moved = true;
+      // Finger drag down (dy > 0) reveals older output -> increase viewportY.
+      scrollViewportTo(t, startTop + dy / termCharHeight(t));
       event.preventDefault();
       event.stopImmediatePropagation();
-    }
-    setIosNativeTerminalInputEnabled(true);
-    focusIosNativeTerminalInput();
+    },
+    { capture: true, passive: false },
+  );
+
+  const endTouch = (event: TouchEvent) => {
+    const wasMoved = moved;
+    active = false;
+    moved = false;
+    // A tap (no scroll) on iOS activates the native text input.
+    if (!wasMoved && IS_IOS_RUNTIME) activateIosNativeInput(term, event);
   };
-  host.addEventListener("touchstart", activate, { capture: true });
-  host.addEventListener("touchend", activate, { capture: true });
-  host.addEventListener("mousedown", activate, { capture: true });
+  host.addEventListener("touchend", endTouch, { capture: true });
+  host.addEventListener("touchcancel", () => {
+    active = false;
+    moved = false;
+  }, { capture: true });
 }
 
 export function setIosNativeTerminalInputEnabled(enabled: boolean): void {
