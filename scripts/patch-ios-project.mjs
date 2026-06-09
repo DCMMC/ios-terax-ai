@@ -2,8 +2,14 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = process.cwd();
-const ldflags =
-  "$(inherited) -lsqlite3 -lz -lbz2 -liconv -lresolv $(PROJECT_DIR)/../../../../ios-linuxkit/deps/build/Release-iphoneos/libarchive.a";
+// libarchive.a lives in the engine tree. Honor IOS_LINUXKIT_DIR so the final
+// Xcode link uses the same engine checkout as build.rs / the linuxkit build,
+// falling back to the sibling ../ios-linuxkit checkout (relative to PROJECT_DIR)
+// when the env var is unset.
+const libarchivePath = process.env.IOS_LINUXKIT_DIR
+  ? `${process.env.IOS_LINUXKIT_DIR}/deps/build/Release-iphoneos/libarchive.a`
+  : "$(PROJECT_DIR)/../../../../ios-linuxkit/deps/build/Release-iphoneos/libarchive.a";
+const ldflags = `$(inherited) -lsqlite3 -lz -lbz2 -liconv -lresolv ${libarchivePath}`;
 
 // The app bundle identifier, read from tauri.conf.json so the pbxproj anchors
 // below are not hardcoded (a renamed dev variant, e.g. com.dcmmc.teraxdbg, must
