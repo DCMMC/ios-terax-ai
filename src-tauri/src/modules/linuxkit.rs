@@ -1597,11 +1597,48 @@ fn init_linuxkit_root_dir() -> Result<PathBuf, String> {
         }
     }
 
-    let target = dirs::data_dir()
+    // Old in-container location (Application Support). Kept for migration below.
+    let container_target = dirs::data_dir()
         .or_else(dirs::home_dir)
         .unwrap_or_else(std::env::temp_dir)
         .join("Terax")
         .join("ios-linuxkit-root");
+
+    // On iOS, store the rootfs under the app's Documents directory: with
+    // UIFileSharingEnabled (Info.plist) it's browsable in the Files app, and it
+    // survives app updates (reinstalling the IPA over the existing install).
+    // This is the standard, non-jailbreak persistent location. $HOME/Documents
+    // is the sandbox Documents dir on iOS. Other platforms keep the data dir.
+    #[cfg(target_os = "ios")]
+    let target = dirs::home_dir()
+        .map(|home| home.join("Documents"))
+        .or_else(dirs::document_dir)
+        .or_else(dirs::data_dir)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("ios-linuxkit-root");
+    #[cfg(not(target_os = "ios"))]
+    let target = container_target.clone();
+
+    // One-time migration from the old in-container location, so upgrading keeps
+    // the user's installed packages / files instead of re-seeding from scratch.
+    #[cfg(target_os = "ios")]
+    if target != container_target
+        && !is_prepared_linuxkit_root(&target)
+        && is_prepared_linuxkit_root(&container_target)
+    {
+        if let Some(parent) = target.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::remove_dir_all(&target);
+        if let Err(e) = fs::rename(&container_target, &target) {
+            eprintln!(
+                "[terax] rootfs migrate -> {} failed: {e}; staying in container",
+                target.display()
+            );
+            return Ok(container_target);
+        }
+    }
+
     let tar_path = locate_root_tar()?;
     let marker = target.join(ROOT_READY_MARKER);
     // Seed-once: if a prepared root already exists, keep it untouched instead of
