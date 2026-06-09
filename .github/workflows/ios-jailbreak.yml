@@ -34,7 +34,7 @@ on:
           Defaults to the pinned commit (tag terax-base-vdso-epoll) that still
           exposes the libish/libfakefs/libish_emu targets.
         type: string
-        default: cf5445c640001569718b977919512dc90f1d21bb
+        default: 9ef943a73ae0fa932d5e8815a3653a7239cc3c7f
   push:
     tags:
       - "ios-v*"
@@ -66,13 +66,18 @@ jobs:
       # PBXProject active targets list, so xcodebuild no longer builds them
       # (the orphaned target objects still linger in the pbxproj text). This
       # fork's build.rs / helper scripts link against those exact targets, so
-      # pin to cf5445c6 (tag terax-base-vdso-epoll): aa97b225 "Add external
-      # folder mounts preference" (the last commit where libish/libfakefs/
-      # libish_emu are still active targets, with the Debug-ApplePleaseFixFB19282108
-      # config and the tools/fakefs.c / util/fchdir.c sources build.rs compiles)
-      # PLUS two fixes: the vdso fix (empty libvdso.so.elf -> musl decode_dyn(NULL)
-      # SIGSEGVs every guest) and the epoll fd-number fix (EEXIST on dup'd
-      # stdout/stderr left Bun's process.stderr undefined -> claude-code crash).
+      # pin to 9ef943a7 (DCMMC/ios-linuxkit fix/brk-trap-loop-fatal, merge of
+      # PR #6) — still based on aa97b225 "Add external folder mounts preference"
+      # (the last commit where libish/libfakefs/libish_emu are active targets,
+      # with the Debug-ApplePleaseFixFB19282108 config and the tools/fakefs.c /
+      # util/fchdir.c sources build.rs compiles) PLUS four fixes:
+      #   1. vdso fix (empty libvdso.so.elf -> musl decode_dyn(NULL) SIGSEGVs).
+      #   2. epoll fd-number fix (EEXIST on dup'd stdout/stderr left Bun's
+      #      process.stderr undefined -> claude-code crash).
+      #   3. BRK non-progressing trap-loop termination (asbestos arm64).
+      #   4. madvise fix: MADV_DONTNEED only zeroes anonymous pages (file-backed
+      #      pages preserved) and MADV_FREE is a no-op — was zeroing claude.exe's
+      #      mapped JSC code/data -> op_enter numCalleeLocals=0 -> ~21s SIGSEGV.
       # Override with the ios_linuxkit_ref dispatch input if needed.
       - name: Checkout ios-linuxkit
         uses: actions/checkout@v4
@@ -87,7 +92,7 @@ jobs:
 
       - name: Pin & verify ios-linuxkit commit
         env:
-          IOS_LINUXKIT_REF: ${{ github.event.inputs.ios_linuxkit_ref || 'cf5445c640001569718b977919512dc90f1d21bb' }}
+          IOS_LINUXKIT_REF: ${{ github.event.inputs.ios_linuxkit_ref || '9ef943a73ae0fa932d5e8815a3653a7239cc3c7f' }}
         run: |
           cd "$GITHUB_WORKSPACE/ios-linuxkit"
           git checkout --force "$IOS_LINUXKIT_REF"
@@ -139,7 +144,7 @@ jobs:
           path: |
             ios-linuxkit/build
             ios-linuxkit/deps/build
-          key: ios-linuxkit-${{ github.event.inputs.ios_linuxkit_ref || 'cf5445c640001569718b977919512dc90f1d21bb' }}-xcode16-v1
+          key: ios-linuxkit-${{ github.event.inputs.ios_linuxkit_ref || '9ef943a73ae0fa932d5e8815a3653a7239cc3c7f' }}-xcode16-v1
 
       - name: Build ios-linuxkit static libraries
         if: steps.linuxkit-cache.outputs.cache-hit != 'true'
