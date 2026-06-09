@@ -34,7 +34,7 @@ on:
           Defaults to the pinned commit (tag terax-base-vdso-epoll) that still
           exposes the libish/libfakefs/libish_emu targets.
         type: string
-        default: 5e8d33fca952523599fc8797728b3701ccd21c49
+        default: 331721e86e3b02e2cffd7e35b35b65d43c9f8dc6
   push:
     tags:
       - "ios-v*"
@@ -69,7 +69,7 @@ jobs:
       # pin to a descendant of aa97b225 "Add external folder mounts preference"
       # (the last commit where libish/libfakefs/libish_emu are still active
       # targets, with the Debug-ApplePleaseFixFB19282108 config and the
-      # tools/fakefs.c / util/fchdir.c sources build.rs compiles) PLUS the five
+      # tools/fakefs.c / util/fchdir.c sources build.rs compiles) PLUS the six
       # engine fixes this fork carries, in order:
       #   1. vdso       — ship a real arm64 vdso (empty libvdso.so.elf made musl
       #                   decode_dyn(NULL) SIGSEGV every dynamically-linked guest)
@@ -81,6 +81,10 @@ jobs:
       #                   (was corrupting JSC code/data -> claude ~21s SIGSEGV)
       #   5. afunix     — bind path-based AF_UNIX sockets under TMPDIR, not host
       #                   /tmp (iOS sandbox forbids host /tmp -> tmux EPERM)
+      #   6. oneshot    — EPOLLONESHOT disables the fd instead of freeing its
+      #                   registration (freeing made the re-arm EPOLL_CTL_MOD
+      #                   fail with ENOENT, wedging Bun's stdin reader so claude
+      #                   exited after Welcome and ignored keypresses)
       # Override with the ios_linuxkit_ref dispatch input if needed.
       - name: Checkout ios-linuxkit
         uses: actions/checkout@v4
@@ -95,7 +99,7 @@ jobs:
 
       - name: Pin & verify ios-linuxkit commit
         env:
-          IOS_LINUXKIT_REF: ${{ github.event.inputs.ios_linuxkit_ref || '5e8d33fca952523599fc8797728b3701ccd21c49' }}
+          IOS_LINUXKIT_REF: ${{ github.event.inputs.ios_linuxkit_ref || '331721e86e3b02e2cffd7e35b35b65d43c9f8dc6' }}
         run: |
           cd "$GITHUB_WORKSPACE/ios-linuxkit"
           git checkout --force "$IOS_LINUXKIT_REF"
@@ -147,7 +151,7 @@ jobs:
           path: |
             ios-linuxkit/build
             ios-linuxkit/deps/build
-          key: ios-linuxkit-${{ github.event.inputs.ios_linuxkit_ref || '5e8d33fca952523599fc8797728b3701ccd21c49' }}-xcode16-v1
+          key: ios-linuxkit-${{ github.event.inputs.ios_linuxkit_ref || '331721e86e3b02e2cffd7e35b35b65d43c9f8dc6' }}-xcode16-v1
 
       - name: Build ios-linuxkit static libraries
         if: steps.linuxkit-cache.outputs.cache-hit != 'true'
