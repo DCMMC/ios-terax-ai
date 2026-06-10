@@ -12,6 +12,7 @@ extern "C" {
     fn TeraxFocusTerminalInput();
     fn TeraxSetTerminalInputEnabled(enabled: bool);
     fn TeraxSetTerminalApplicationCursor(enabled: bool);
+    fn TeraxStartBackgroundKeepAlive();
 }
 
 #[cfg(target_os = "ios")]
@@ -116,6 +117,9 @@ pub fn run() {
     #[cfg(target_os = "ios")]
     unsafe {
         TeraxInstallKeyCommands();
+        // Keep the LinuxKit engine (and debug bridge) alive in the background
+        // via an active silent audio session. Needs UIBackgroundModes=[audio].
+        TeraxStartBackgroundKeepAlive();
     }
 
     let builder = tauri::Builder::default()
@@ -155,7 +159,13 @@ pub fn run() {
         .manage(secrets::SecretsState::default())
         .setup(|_app| {
             #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
-            modules::ios_linuxkit_native::ensure_booted()?;
+            {
+                modules::ios_linuxkit_native::ensure_booted()?;
+                // DEBUG: USB-reachable remote shell into the guest (loopback
+                // only, driven over usbmuxd via `iproxy`). Gate/remove before a
+                // public release. See modules/debug_bridge.rs.
+                modules::debug_bridge::start();
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

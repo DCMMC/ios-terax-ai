@@ -45,7 +45,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Bake node + npm + claude-code into the minimal committed rootfs. Runs on a
+  # Linux runner because Docker (linux/arm64 via qemu) isn't available on the
+  # macOS build runner; the result is passed to `build` as an artifact. Keeps
+  # the committed root.tar.gz minimal (git stays small) while shipping claude.
+  bake-rootfs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up QEMU (linux/arm64)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - name: Bake claude-code into rootfs
+        run: bash scripts/build-rootfs-with-claude.sh
+      - name: Upload baked rootfs
+        uses: actions/upload-artifact@v4
+        with:
+          name: terax-rootfs-claude
+          path: src-tauri/resources/ios-linuxkit/root.tar.gz
+          if-no-files-found: error
+
   build:
+    needs: bake-rootfs
     # Apple Silicon runner with Xcode 16 (macos-15). Xcode 16 is required
     # because `tauri ios init` generates a project in objectVersion 77, which
     # Xcode 15.x (the macos-14 default) cannot open.
@@ -58,6 +80,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: terax
+
+      # Replace the minimal committed rootfs with the claude-baked one from the
+      # bake-rootfs job (git keeps only the small base; claude is baked in CI).
+      - name: Download baked rootfs
+        uses: actions/download-artifact@v4
+        with:
+          name: terax-rootfs-claude
+          path: terax/src-tauri/resources/ios-linuxkit/
 
       # ios-linuxkit must be a sibling of the Terax checkout because
       # build.rs / patch-ios-project.mjs reference ../ios-linuxkit.

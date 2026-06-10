@@ -198,7 +198,10 @@ impl NativePtySession {
 
         let exe = CString::new(LINUXKIT_SHELL).map_err(|e| e.to_string())?;
         let arg0 = CString::new("ash").map_err(|e| e.to_string())?;
-        let arg1 = CString::new("-lc").map_err(|e| e.to_string())?;
+        // Non-login (-c, not -lc): do NOT source /etc/profile for one-shot
+        // command execution. PATH/env are supplied explicitly via envp, and a
+        // broken /etc/profile (e.g. a stray `exit`) must not wedge command runs.
+        let arg1 = CString::new("-c").map_err(|e| e.to_string())?;
         let arg2 = CString::new(script).map_err(|e| e.to_string())?;
         let argv = [arg0.as_ptr(), arg1.as_ptr(), arg2.as_ptr(), ptr::null()];
         let env = LINUXKIT_ENV
