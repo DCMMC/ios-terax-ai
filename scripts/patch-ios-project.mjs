@@ -9,7 +9,10 @@ const root = process.cwd();
 const libarchivePath = process.env.IOS_LINUXKIT_DIR
   ? `${process.env.IOS_LINUXKIT_DIR}/deps/build/Release-iphoneos/libarchive.a`
   : "$(PROJECT_DIR)/../../../../ios-linuxkit/deps/build/Release-iphoneos/libarchive.a";
-const ldflags = `$(inherited) -lsqlite3 -lz -lbz2 -liconv -lresolv ${libarchivePath}`;
+// AVFoundation is needed by native/ios_keepalive.mm (background audio keep-alive).
+// The final executable is linked by xcode, which does not honor cargo's
+// rustc-link-lib=framework directives, so add it to the xcode link explicitly.
+const ldflags = `$(inherited) -lsqlite3 -lz -lbz2 -liconv -lresolv -framework AVFoundation ${libarchivePath}`;
 
 // The app bundle identifier, read from tauri.conf.json so the pbxproj anchors
 // below are not hardcoded (a renamed dev variant, e.g. com.dcmmc.teraxdbg, must
@@ -120,4 +123,25 @@ if (next !== original) {
 
 if (patchedBlocks === 0) {
   console.warn("No Terax iOS target build settings found to patch.");
+}
+
+// Add UIBackgroundModes=[audio] to the iOS Info.plist so the LinuxKit engine
+// (and the debug bridge) keeps running when the app isn't foregrounded. The
+// active silent audio session is started natively (native/ios_keepalive.mm);
+// without this plist key iOS suspends the app after ~30s. xcodegen already ran
+// during `tauri ios init`, so we patch the generated Info.plist directly.
+const infoPlistPath = join(root, "src-tauri/gen/apple/terax_iOS/Info.plist");
+if (existsSync(infoPlistPath)) {
+  const plist = readFileSync(infoPlistPath, "utf8");
+  if (!plist.includes("UIBackgroundModes")) {
+    const entry =
+      "\t<key>UIBackgroundModes</key>\n\t<array>\n\t\t<string>audio</string>\n\t</array>\n";
+    const patched = plist.replace(/\n<\/dict>\n<\/plist>/, `\n${entry}</dict>\n</plist>`);
+    if (patched !== plist) {
+      writeFileSync(infoPlistPath, patched);
+      console.log("Patched Info.plist: added UIBackgroundModes=[audio]");
+    } else {
+      console.warn("Could not locate </dict></plist> anchor in Info.plist");
+    }
+  }
 }

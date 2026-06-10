@@ -1,3 +1,5 @@
+#[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
+pub mod debug_bridge;
 pub mod fs;
 #[cfg(all(mobile, target_os = "ios", terax_ios_linuxkit_native))]
 pub mod ios_linuxkit_native;

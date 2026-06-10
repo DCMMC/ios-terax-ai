@@ -6,6 +6,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=TERAX_IOS_LINUXKIT_NATIVE");
     if target.contains("apple-ios") {
         build_ios_keycommands();
+        build_ios_keepalive();
     }
     if target.contains("apple-ios") && enable_native_ios_linuxkit {
         println!("cargo:rustc-cfg=terax_ios_linuxkit_native");
@@ -21,6 +22,18 @@ fn build_ios_keycommands() {
         .cpp(true)
         .flag("-fobjc-arc")
         .compile("terax_ios_keycommands");
+}
+
+fn build_ios_keepalive() {
+    println!("cargo:rerun-if-changed=native/ios_keepalive.mm");
+    cc::Build::new()
+        .file("native/ios_keepalive.mm")
+        .cpp(true)
+        .flag("-fobjc-arc")
+        .compile("terax_ios_keepalive");
+    // Background audio keep-alive needs AVFoundation (AVAudioEngine/Session).
+    println!("cargo:rustc-link-lib=framework=AVFoundation");
+    println!("cargo:rustc-link-lib=framework=Foundation");
 }
 
 fn build_ios_linuxkit_bridge(target: &str) {
