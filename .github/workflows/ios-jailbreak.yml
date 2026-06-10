@@ -30,11 +30,12 @@ on:
           - debug
       ios_linuxkit_ref:
         description: >-
-          ios-linuxkit commit to build the native terminal backend against.
-          Defaults to the pinned commit (tag terax-base-vdso-epoll) that still
-          exposes the libish/libfakefs/libish_emu targets.
+          ios-linuxkit ref (branch/tag/SHA) to build the native terminal backend
+          against. Defaults to the consolidated `terax` branch, which carries the
+          six engine fixes below on top of the last commit that still exposes the
+          libish/libfakefs/libish_emu targets.
         type: string
-        default: 331721e86e3b02e2cffd7e35b35b65d43c9f8dc6
+        default: terax
   push:
     tags:
       - "ios-v*"
@@ -99,12 +100,15 @@ jobs:
 
       - name: Pin & verify ios-linuxkit commit
         env:
-          IOS_LINUXKIT_REF: ${{ github.event.inputs.ios_linuxkit_ref || '331721e86e3b02e2cffd7e35b35b65d43c9f8dc6' }}
+          IOS_LINUXKIT_REF: ${{ github.event.inputs.ios_linuxkit_ref || 'terax' }}
         run: |
           cd "$GITHUB_WORKSPACE/ios-linuxkit"
           git checkout --force "$IOS_LINUXKIT_REF"
           git submodule update --init --recursive
-          echo "ios-linuxkit HEAD: $(git rev-parse HEAD)"
+          SHA="$(git rev-parse HEAD)"
+          echo "ios-linuxkit HEAD: $SHA"
+          # Export the resolved SHA so the cache key tracks branch movement.
+          echo "IOS_LINUXKIT_SHA=$SHA" >> "$GITHUB_ENV"
           git log -1 --oneline
           echo -n "libish target in pbxproj: "
           grep -c 'name = libish;' iSH.xcodeproj/project.pbxproj || echo 0
@@ -151,7 +155,9 @@ jobs:
           path: |
             ios-linuxkit/build
             ios-linuxkit/deps/build
-          key: ios-linuxkit-${{ github.event.inputs.ios_linuxkit_ref || '331721e86e3b02e2cffd7e35b35b65d43c9f8dc6' }}-xcode16-v1
+          # Keyed by the resolved commit SHA (set in "Pin & verify"), so the
+          # cache invalidates correctly when the `terax` branch advances.
+          key: ios-linuxkit-${{ env.IOS_LINUXKIT_SHA }}-xcode16-v1
 
       - name: Build ios-linuxkit static libraries
         if: steps.linuxkit-cache.outputs.cache-hit != 'true'
